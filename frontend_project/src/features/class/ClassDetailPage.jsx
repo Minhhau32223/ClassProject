@@ -148,17 +148,24 @@ export default function ClassDetailPage({ cls, onBack, username }) {
     };
 
     const tabStyle = (t) => ({
-        padding: '9px 18px', border: 'none',
-        background: tab === t ? '#eff2ff' : 'transparent',
-        color: tab === t ? '#3B5BDB' : '#64748b',
-        fontWeight: tab === t ? 700 : 500,
-        borderRadius: 8, cursor: 'pointer', fontSize: 13,
+        flex: 1,
+        textAlign: 'center',
+        padding: '10px 16px',
+        border: 'none',
+        borderRadius: 999,
+        background: tab === t ? '#ffffff' : 'transparent',
+        color: '#334155',
+        fontWeight: 600,
+        cursor: 'pointer',
+        fontSize: 14,
+        boxShadow: tab === t ? '0 2px 6px rgba(0,0,0,0.25)' : 'none',
+        transition: '0.2s'
     });
 
     return (
         <div>
-            <button onClick={onBack} style={{ background: 'none', border: 'none', color: '#3B5BDB', fontSize: 13, cursor: 'pointer', marginBottom: 12 }}>
-                ← Quay lại
+            <button onClick={onBack} style={{ background: 'none', border: 'none', color: '#000000', fontSize: 16,fontWeight: 700 , cursor: 'pointer', marginBottom: 12 }}>
+                ←     Quay lại
             </button>
 
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, marginBottom: 20 }}>
@@ -173,7 +180,7 @@ export default function ClassDetailPage({ cls, onBack, username }) {
             </div>
 
             {/* Tabs */}
-            <div style={{ display: 'flex', gap: 4, marginBottom: 20 }}>
+            <div style={{display: 'inline-flex',background: '#d6dce3', borderRadius: 12,padding: 4, marginBottom: 20,  width: '100%' }}>
                 <button style={tabStyle('posts')} onClick={() => setTab('posts')}>📋 Bài viết</button>
                 <button style={tabStyle('members')} onClick={() => setTab('members')}>👥 Thành viên</button>
                 <button style={tabStyle('stats')} onClick={() => setTab('stats')}>📊 Thống kê</button>
