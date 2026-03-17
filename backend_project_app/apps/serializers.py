@@ -76,11 +76,16 @@ from apps.models import Document
 
 class DocumentSerializer(serializers.ModelSerializer):
     """ Serializer cho Tài liệu (Chỉ Teacher đăng tài liệu gắn với Post) """
+    file_url = serializers.SerializerMethodField()
     
     class Meta:
         model = Document
-        fields = ('id', 'post', 'file_name', 'file_path', 'uploaded_at')
-        read_only_fields = ('post', )
+        fields = ('id', 'post', 'file_name', 'file', 'file_path', 'file_url', 'uploaded_at')
+        read_only_fields = ('post', 'file_url')
+    
+    def get_file_url(self, obj):
+        """Return the file URL"""
+        return obj.file_url
 from rest_framework import serializers
 from apps.models import AttendanceSession, AttendanceRecord
 from apps.serializers import UserSerializer

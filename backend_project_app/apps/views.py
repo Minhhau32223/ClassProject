@@ -233,13 +233,27 @@ class DocumentUploadView(APIView):
             
         post_obj = get_object_or_404(Post, id=post_id, class_room=class_room)
         
-        file_name = request.data.get('file_name')
-        file_path = request.data.get('file_path')
+        # Handle actual file upload
+        uploaded_file = request.FILES.get('file')
+        file_name = request.data.get('file_name', '')
+        file_path = request.data.get('file_path', '')
         
-        if not file_name or not file_path:
-            return Response({"error": "Vui lòng nhập tên file (file_name) và đường dẫn (file_path)."}, status=status.HTTP_400_BAD_REQUEST)
+        # If file is uploaded, use it. Otherwise fall back to file_name/file_path
+        if uploaded_file:
+            document = Document.objects.create(
+                post=post_obj, 
+                file_name=uploaded_file.name,
+                file=uploaded_file
+            )
+        elif file_name and file_path:
+            document = Document.objects.create(
+                post=post_obj, 
+                file_name=file_name, 
+                file_path=file_path
+            )
+        else:
+            return Response({"error": "Vui lòng cung cấp file hoặc cả tên file (file_name) và đường dẫn (file_path)."}, status=status.HTTP_400_BAD_REQUEST)
             
-        document = Document.objects.create(post=post_obj, file_name=file_name, file_path=file_path)
         serializer = DocumentSerializer(document)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
