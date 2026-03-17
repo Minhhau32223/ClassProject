@@ -167,17 +167,62 @@ export default function ClassDetailPage({ cls, onBack, username }) {
             <button onClick={onBack} style={{ background: 'none', border: 'none', color: '#000000', fontSize: 16,fontWeight: 700 , cursor: 'pointer', marginBottom: 12 }}>
                 ←     Quay lại
             </button>
+        {/* Header lớp học */}
+        <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+            padding: '20px 24px',
+            background: '#ffffff',
+            borderRadius: 16,
+            boxShadow: '0 6px 20px rgba(0,0,0,0.06)',
+            marginBottom: 20
+        }}>
+            {/* LEFT */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                
+                {/* Tên lớp + role */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>
+                        {cls.class_name}
+                    </h1>
 
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, marginBottom: 20 }}>
-                <div style={{ flex: 1 }}>
-                    <span className="class-card-code">{cls.class_code}</span>
-                    <h1 style={{ fontSize: 20, fontWeight: 700 }}>{cls.class_name}</h1>
-                    <p style={{ color: '#94a3b8', fontSize: 13 }}>Người tạo: {cls.creator?.full_name}</p>
-                </div>
-                <span className={`badge ${isCreator ? 'badge-blue' : 'badge-green'}`}>
-                    {isCreator ? '👨‍🏫 Người tạo' : '🎓 Thành viên'}
+                <span style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    background: isCreator ? '#e0edff' : '#dcfce7',
+                    color: isCreator ? '#1d4ed8' : '#16a34a',
+                    fontSize: 12,
+                    padding: '5px 12px',
+                    borderRadius: 999,
+                    fontWeight: 600
+                }}>
+                    {isCreator ? 'Người tạo' : 'Thành viên'}
                 </span>
+
+                </div>
+
+                {/* Mã lớp + số thành viên */}
+                <div style={{ display: 'flex', gap: 16, fontSize: 15 }}>
+                    <span>
+                        Mã lớp: 
+                        <span style={{
+                            background: '#f1f5f9',
+                            padding: '2px 8px',
+                            borderRadius: 6,
+                            marginLeft: 6,
+                            fontWeight: 600
+                        }}>
+                            {cls.class_code}
+                        </span>
+                    </span>
+
+                    <span style={{ color: '#64748b' }}>
+                        {cls.member_count || 1} thành viên
+                    </span>
+                </div>
             </div>
+        </div>
 
             {/* Tabs */}
             <div style={{display: 'inline-flex',background: '#d6dce3', borderRadius: 12,padding: 4, marginBottom: 20,  width: '100%' }}>
@@ -221,6 +266,11 @@ export default function ClassDetailPage({ cls, onBack, username }) {
                     {loadingTab ? (
                         <div className="loading">Đang tải...</div>
                     ) : (
+                        <>
+                        <p style={{ marginBottom: 12 }}>
+                            <strong>Tổng thành viên:</strong> {members.length}
+                        </p>
+                        
                         <table>
                             <thead>
                                 <tr><th>Họ tên</th><th>Username</th><th>Khuôn mặt</th><th>Ngày tham gia</th></tr>
@@ -231,8 +281,20 @@ export default function ClassDetailPage({ cls, onBack, username }) {
                                         <td><strong>{m.user.full_name}</strong></td>
                                         <td style={{ color: '#64748b' }}>@{m.user.username}</td>
                                         <td>
-                                            <span className={`badge ${m.face_registered ? 'badge-green' : 'badge-gray'}`}>
-                                                {m.face_registered ? '✅ Đã đăng ký' : '⏳ Chưa'}
+                                            <span
+                                                style={{
+                                                    display: 'inline-flex',
+                                                    alignItems: 'center',
+                                                    gap: 6,
+                                                    padding: '4px 10px',
+                                                    borderRadius: 999,
+                                                    fontSize: 12,
+                                                    fontWeight: 600,
+                                                    background: m.face_registered ? '#f0fdf4' : '#fef2f2',
+                                                    color: m.face_registered ? '#16a34a' : '#dc2626'
+                                                }}
+                                            >
+                                                {m.face_registered ? '✔ Đã xác thực' : '✖ Chưa xác thực'}
                                             </span>
                                         </td>
                                         <td style={{ color: '#94a3b8' }}>{new Date(m.joined_at).toLocaleDateString('vi-VN')}</td>
@@ -240,6 +302,7 @@ export default function ClassDetailPage({ cls, onBack, username }) {
                                 ))}
                             </tbody>
                         </table>
+                        </>
                     )}
                 </div>
             )}
