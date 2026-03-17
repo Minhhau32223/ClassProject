@@ -66,20 +66,28 @@ class PostSerializer(serializers.ModelSerializer):
     """ Serializer cho Bài viết và Kèm theo danh sách Bình luận """
     author_name = serializers.ReadOnlyField(source='author.full_name')
     comments = CommentSerializer(many=True, read_only=True)
+    comment_count = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = Post
-        fields = ('id', 'class_room', 'author', 'author_name', 'content', 'created_at', 'comments')
+        fields = ('id', 'class_room', 'author', 'author_name', 'content', 'created_at', 'comments', 'comment_count')
         read_only_fields = ('author', 'class_room')
 from rest_framework import serializers
 from apps.models import Document
 
 class DocumentSerializer(serializers.ModelSerializer):
-    """ Serializer cho Tài liệu (Chỉ Teacher đăng tài liệu gắn với Post) """
-    
+    """ Serializer cho Tài liệu — trả về link download thật """
+    file_url = serializers.SerializerMethodField()
+
+    def get_file_url(self, obj):
+        request = self.context.get('request')
+        if obj.file_upload and request:
+            return request.build_absolute_uri(obj.file_upload.url)
+        return None
+
     class Meta:
         model = Document
-        fields = ('id', 'post', 'file_name', 'file_path', 'uploaded_at')
+        fields = ('id', 'post', 'file_name', 'file_url', 'uploaded_at')
         read_only_fields = ('post', )
 from rest_framework import serializers
 from apps.models import AttendanceSession, AttendanceRecord

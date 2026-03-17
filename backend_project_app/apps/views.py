@@ -161,6 +161,8 @@ from apps.models import Post, Comment
 from apps.serializers import PostSerializer, CommentSerializer
 from apps.permissions import IsFaceRegisteredMemberOrCreator
 
+from django.db.models import Count
+
 # 7. Danh sách Bài viết (Timeline Lớp học)
 class PostListView(APIView):
     """
@@ -171,8 +173,10 @@ class PostListView(APIView):
 
     def get(self, request, class_id):
         class_room = get_object_or_404(Class, id=class_id)
-        # Sắp xếp bài mới nhất lên đầu
-        posts = Post.objects.filter(class_room=class_room).order_by('-created_at')
+        # Sắp xếp bài mới nhất lên đầu và thêm biến đếm comments
+        posts = Post.objects.filter(class_room=class_room).annotate(
+            comment_count=Count('comments')
+        ).order_by('-created_at')
         serializer = PostSerializer(posts, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -190,6 +194,44 @@ class PostListView(APIView):
         serializer = PostSerializer(post)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
+# 7.5. Sửa & Xóa bài viết — PUT/DELETE /posts/<post_id>/
+class PostDetailView(APIView):
+    """
+    Cho phép tác giả bài viết sửa hoặc xóa bài viết.
+    Người tạo lớp (creator) cũng có quyền xóa bài viết của người khác (nếu lớp có nhiều giáo viên/admin).
+    """
+    permission_classes = [IsAuthenticated]
+
+    def put(self, request, class_id, post_id):
+        post = get_object_or_404(Post, id=post_id, class_room_id=class_id)
+
+        # Chỉ người viết bài mới được sửa
+        if post.author != request.user:
+            return Response({"error": "Bạn chỉ có thể sửa bài viết của chính mình."}, status=status.HTTP_403_FORBIDDEN)
+
+        content = request.data.get('content')
+        if not content:
+            return Response({"error": "Nội dung bài viết mới không được để trống."}, status=status.HTTP_400_BAD_REQUEST)
+
+        post.content = content
+        post.save()
+        serializer = PostSerializer(post)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def delete(self, request, class_id, post_id):
+        post = get_object_or_404(Post, id=post_id, class_room_id=class_id)
+        class_room = post.class_room
+
+        # Tác giả bài viết hoặc Creator của lớp học mới được xóa
+        is_author = post.author == request.user
+        is_creator = class_room.creator == request.user
+
+        if not (is_author or is_creator):
+            return Response({"error": "Bạn không có quyền xóa bài viết này."}, status=status.HTTP_403_FORBIDDEN)
+
+        post.delete()
+        return Response({"message": "Đã xóa bài viết thành công."}, status=status.HTTP_200_OK)
+
 # 8. Bình luận vào bài viết
 class CommentCreateView(APIView):
     """
@@ -197,6 +239,13 @@ class CommentCreateView(APIView):
     Quyền: Bắt buộc đã Đăng ký khuôn mặt hoặc là người tạo lớp.
     """
     permission_classes = [IsAuthenticated, IsFaceRegisteredMemberOrCreator]
+
+    def get(self, request, class_id, post_id):
+        # Lấy danh sách tất cả comments của post, cũ nhất lên đầu
+        post_obj = get_object_or_404(Post, id=post_id, class_room_id=class_id)
+        comments = Comment.objects.filter(post=post_obj).select_related('user').order_by('created_at')
+        serializer = CommentSerializer(comments, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
     def post(self, request, class_id, post_id):
         # class_id có trên URL để Permission hoạt động
@@ -210,43 +259,89 @@ class CommentCreateView(APIView):
         serializer = CommentSerializer(comment)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
+# 9. Sửa & Xóa bình luận — PUT/DELETE /comments/<comment_id>/
+class CommentDetailView(APIView):
+    """
+    Cho phép chủ bài post hoặc chủ commment xóa hoặc sửa comment đó
+
+    """
+    permission_classes = [IsAuthenticated]
+
+    def put(self, request, comment_id):
+        comment = get_object_or_404(Comment, id=comment_id)
+
+        # Chỉ người viết comment mới được sửa
+        if comment.user != request.user:
+            return Response({"error": "Bạn chỉ có thể sửa bình luận của chính mình."}, status=status.HTTP_403_FORBIDDEN)
+
+        content = request.data.get('content')
+        if not content:
+            return Response({"error": "Nội dung mới (content) không được để trống."}, status=status.HTTP_400_BAD_REQUEST)
+
+        comment.content = content
+        comment.save()
+        serializer = CommentSerializer(comment)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def delete(self, request, comment_id):
+        comment = get_object_or_404(Comment, id=comment_id)
+        class_room = comment.post.class_room
+
+        # Chủ comment hoặc Creator lớp mới được xóa
+        is_owner = comment.user == request.user
+        is_creator = class_room.creator == request.user
+
+        if not (is_owner or is_creator):
+            return Response({"error": "Bạn không có quyền xóa bình luận này."}, status=status.HTTP_403_FORBIDDEN)
+
+        comment.delete()
+        return Response({"message": "Đã xóa bình luận thành công."}, status=status.HTTP_200_OK)
+
 # -------------------------------------------------------------
 # PHẦN III: TÀI LIỆU (DOCUMENTS)
 # -------------------------------------------------------------
 from apps.models import Document
 from apps.serializers import DocumentSerializer
 
-# 9. Upload Tài liệu
+# 10. Upload Tài liệu (file thật)
 class DocumentUploadView(APIView):
     """
-    Giáo viên tải tài liệu đính kèm vào bài viết.
-    Chỉ Creator mới có quyền Upload.
+    Upload file thật (PDF, DOCX, PPTX...) đính kèm vào bài viết.
+    Chỉ Creator lớp mới có quyền upload.
+    Dùng form-data trong Postman, key 'file' là file upload.
     """
     permission_classes = [IsAuthenticated]
 
     def post(self, request, class_id, post_id):
         class_room = get_object_or_404(Class, id=class_id)
-        
+
         # Chỉ người tạo lớp mới được upload tài liệu
         if class_room.creator != request.user:
             return Response({"error": "Chỉ người tạo lớp mới có quyền tải lên tài liệu."}, status=status.HTTP_403_FORBIDDEN)
-            
+
         post_obj = get_object_or_404(Post, id=post_id, class_room=class_room)
-        
-        file_name = request.data.get('file_name')
-        file_path = request.data.get('file_path')
-        
-        if not file_name or not file_path:
-            return Response({"error": "Vui lòng nhập tên file (file_name) và đường dẫn (file_path)."}, status=status.HTTP_400_BAD_REQUEST)
-            
-        document = Document.objects.create(post=post_obj, file_name=file_name, file_path=file_path)
-        serializer = DocumentSerializer(document)
+
+        # Lấy file thật từ request.FILES
+        uploaded_file = request.FILES.get('file')
+        if not uploaded_file:
+            return Response({"error": "Vui lòng chọn file cần upload (key: 'file')."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Lấy tên hiển thị, mặc định dùng tên file gốc
+        file_name = request.data.get('file_name', uploaded_file.name)
+
+        document = Document.objects.create(
+            post=post_obj,
+            file_name=file_name,
+            file_upload=uploaded_file
+        )
+        serializer = DocumentSerializer(document, context={'request': request})
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
-# 10. Tải/Xem Tài liệu
+
+# 11. Danh sách Tài liệu của bài viết
 class DocumentListView(APIView):
     """
-    Lấy danh sách tài liệu của một bài viết.
+    Lấy danh sách tài liệu kèm link download của một bài viết.
     Quyền: Thành viên đã đăng ký khuôn mặt hoặc người tạo lớp.
     """
     permission_classes = [IsAuthenticated, IsFaceRegisteredMemberOrCreator]
@@ -255,8 +350,41 @@ class DocumentListView(APIView):
         # class_id có trên URL để check Permission khuôn mặt
         post_obj = get_object_or_404(Post, id=post_id, class_room_id=class_id)
         documents = Document.objects.filter(post=post_obj)
-        serializer = DocumentSerializer(documents, many=True)
+        serializer = DocumentSerializer(documents, many=True, context={'request': request})
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+# 12. Download file tài liệu
+from django.http import FileResponse
+import os
+
+class DocDownloadView(APIView):
+    """
+    Download file tài liệu về máy.
+    GET /documents/<doc_id>/download/
+    Quyền: ClassMember hoặc Creator.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, doc_id):
+        document = get_object_or_404(Document, id=doc_id)
+        class_room = document.post.class_room
+
+        is_creator = class_room.creator == request.user
+        is_member = ClassMember.objects.filter(user=request.user, class_room=class_room).exists()
+
+        if not (is_creator or is_member):
+            return Response({"error": "Bạn không có quyền tải tài liệu này."}, status=status.HTTP_403_FORBIDDEN)
+
+        file_path = document.file_upload.path
+        if not os.path.exists(file_path):
+            return Response({"error": "File không tồn tại trên server."}, status=status.HTTP_404_NOT_FOUND)
+
+        return FileResponse(
+            open(file_path, 'rb'),
+            as_attachment=True,
+            filename=document.file_name
+        )
 
 # -------------------------------------------------------------
 # PHẦN IV: ĐIỂM DANH (ATTENDANCE)
