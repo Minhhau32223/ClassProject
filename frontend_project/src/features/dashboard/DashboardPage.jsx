@@ -2,6 +2,15 @@ import { useState, useEffect } from 'react';
 import classService from '../../data/services/class.service';
 import Modal from '../../shared/components/Modal';
 
+const noteStyle = {
+    background: '#e0ecff',
+    border: '1px solid #93c5fd',
+    padding: '12px 14px',
+    borderRadius: 10,
+    color: '#1d4ed8',
+    fontSize: 14
+};
+
 // Form tạo lớp học
 function CreateClassForm({ onCreated, onClose }) {
     const [name, setName] = useState('');
@@ -28,12 +37,23 @@ function CreateClassForm({ onCreated, onClose }) {
                 <label>Tên lớp học</label>
                 <input value={name} onChange={e => setName(e.target.value)} placeholder="VD: Lập trình Web - SE101" required />
             </div>
+            <div style={noteStyle}>
+            <strong>Lưu ý:</strong> Sau khi tạo lớp học, hệ thống sẽ tự động tạo mã lớp để các thành viên có thể tham gia.
+             </div>
             <button className="btn btn-primary" type="submit" disabled={loading}>
                 {loading ? 'Đang tạo...' : 'Tạo lớp'}
             </button>
         </form>
     );
 }
+
+const faceNoteStyle = {
+    background: '#fef3c7',
+    border: '1px solid #facc15',
+    padding: '14px 16px',
+    borderRadius: 12,
+    color: '#92400e'
+};
 
 // Form tham gia lớp học
 function JoinClassForm({ onJoined, onClose }) {
@@ -67,6 +87,30 @@ function JoinClassForm({ onJoined, onClose }) {
                     required
                     style={{ textTransform: 'uppercase', letterSpacing: 2, fontWeight: 700 }}
                 />
+            </div>
+            <div style={faceNoteStyle}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                    <span style={{ fontSize: 18 }}>⚠️</span>
+                    <div>
+                        <div style={{ fontWeight: 600, marginBottom: 6 }}>
+                            Yêu cầu đăng ký khuôn mặt
+                        </div>
+
+                        <div style={{ fontSize: 14, marginBottom: 6 }}>
+                            Khi tham gia lớp học lần đầu, bạn sẽ cần đăng ký khuôn mặt để có thể:
+                        </div>
+
+                        <ul style={{margin: '4px 0 8px 16px',paddingLeft: 16,fontSize: 14,lineHeight: 1.5}}>
+                            <li>Truy cập nội dung lớp học</li>
+                            <li>Thực hiện điểm danh tự động</li>
+                        </ul>
+
+                        <div style={{ fontSize: 14 }}>
+                            Quy trình đăng ký yêu cầu quét khuôn mặt ở nhiều góc độ khác nhau
+                            (chính diện, nghiêng trái/phải, cúi/ngẩng).
+                        </div>
+                    </div>
+                </div>
             </div>
             <button className="btn btn-primary" type="submit" disabled={loading}>
                 {loading ? 'Đang tham gia...' : 'Tham gia'}

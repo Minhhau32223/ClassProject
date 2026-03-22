@@ -35,10 +35,10 @@ export default function LoginPage({ onLogin, onGoRegister }) {
 
                 <form onSubmit={handleSubmit}>
                     <div className="form-group">
-                        <label>Email</label>
+                        <label>Username</label>
                         <input
                             type="text"
-                            placeholder="example@email.com"
+                            placeholder="student1"
                             value={username}
                             onChange={(e) => setUsername(e.target.value)}
                             required
