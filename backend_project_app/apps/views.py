@@ -424,3 +424,55 @@ class AttendanceStatsView(APIView):
                 "absent_count": total_sessions - present_count,
                 "attendance_rate": f"{round((present_count/total_sessions*100), 2)}%" if total_sessions > 0 else "0%"
             }, status=status.HTTP_200_OK)
+
+
+from django.shortcuts import get_object_or_404
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from apps.models import AttendanceSession
+from apps.serializers import AttendanceSessionSerializer
+from django.utils import timezone
+
+
+class SessionDetailView(APIView):
+    """
+    Xem chi tiết một phiên điểm danh
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, session_id):
+
+        session = get_object_or_404(AttendanceSession, id=session_id)
+
+        serializer = AttendanceSessionSerializer(session)
+
+        now = timezone.now()
+
+        is_active = session.start_time <= now <= session.end_time
+
+        return Response({
+            "session": serializer.data,
+            "is_active": is_active
+        })
+
+from apps.models import AttendanceSession
+
+class SessionListView(APIView):
+    """
+    Danh sách các phiên điểm danh của lớp
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, class_id):
+
+        sessions = AttendanceSession.objects.filter(
+            class_room_id=class_id
+        ).order_by('-start_time')
+
+        serializer = AttendanceSessionSerializer(
+            sessions,
+            many=True
+        )
+
+        return Response(serializer.data)

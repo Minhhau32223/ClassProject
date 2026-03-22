@@ -1,6 +1,6 @@
 from django.urls import path
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
-from apps.views import RegisterView, ClassCreateView, ClassJoinView, MyClassesView, ClassMembersView, ClassRegisterFaceView, PostListView, CommentCreateView, DocumentUploadView, DocumentListView, AttendanceSessionCreateView, AttendanceCheckInView, AttendanceStatsView
+from apps.views import RegisterView, ClassCreateView, ClassJoinView, MyClassesView, ClassMembersView, ClassRegisterFaceView, PostListView, CommentCreateView, DocumentUploadView, DocumentListView, AttendanceSessionCreateView, AttendanceCheckInView, AttendanceStatsView, SessionDetailView, SessionListView
 
 urlpatterns = [
     # Auth Endpoints
@@ -27,4 +27,6 @@ urlpatterns = [
     path('classes/<int:class_id>/attendance/sessions/', AttendanceSessionCreateView.as_view(), name='create_attendance_session'),
     path('classes/<int:class_id>/attendance/sessions/<int:session_id>/checkin/', AttendanceCheckInView.as_view(), name='attendance_checkin'),
     path('classes/<int:class_id>/attendance/stats/', AttendanceStatsView.as_view(), name='attendance_stats'),
+    path('attendance/session/<int:session_id>/',SessionDetailView.as_view(),name='attendance_session_detail'),
+    path('attendance/sessions/class/<int:class_id>/',SessionListView.as_view(),name='attendance_sessions_list'),
 ]
