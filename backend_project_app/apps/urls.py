@@ -1,6 +1,6 @@
 from django.urls import path
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
-from apps.views import RegisterView, ClassCreateView, ClassJoinView, MyClassesView, ClassMembersView, ClassRegisterFaceView, PostListView, CommentCreateView, DocumentUploadView, DocumentListView, AttendanceSessionCreateView, AttendanceCheckInView, AttendanceStatsView
+from apps.views import RegisterView, ClassCreateView, ClassJoinView, MyClassesView, ClassMembersView, ClassRegisterFaceView, PostListView, PostDetailView, CommentCreateView, CommentDetailView, DocumentUploadView, DocumentListView, DocDownloadView, AttendanceSessionCreateView, AttendanceCheckInView, AttendanceStatsView
 
 urlpatterns = [
     # Auth Endpoints
@@ -17,11 +17,14 @@ urlpatterns = [
     
     # Posts & Comments Endpoints
     path('classes/<int:class_id>/posts/', PostListView.as_view(), name='class_posts'),
+    path('classes/<int:class_id>/posts/<int:post_id>/', PostDetailView.as_view(), name='post_detail'),
     path('classes/<int:class_id>/posts/<int:post_id>/comments/', CommentCreateView.as_view(), name='post_comments'),
+    path('comments/<int:comment_id>/', CommentDetailView.as_view(), name='comment_detail'),
     
     # Documents Endpoints
     path('classes/<int:class_id>/posts/<int:post_id>/documents/', DocumentListView.as_view(), name='post_documents'),
     path('classes/<int:class_id>/posts/<int:post_id>/documents/upload/', DocumentUploadView.as_view(), name='upload_document'),
+    path('documents/<int:doc_id>/download/', DocDownloadView.as_view(), name='doc_download'),
     
     # Attendance Endpoints
     path('classes/<int:class_id>/attendance/sessions/', AttendanceSessionCreateView.as_view(), name='create_attendance_session'),

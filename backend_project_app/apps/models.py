@@ -99,8 +99,8 @@ class Comment(models.Model):
 class Document(models.Model):
     """ Bảng Documents lưu thông tin file đính kèm bài viết (PDF, DOCX, PPTX) """
     post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name='documents', verbose_name="Bài viết (post_id)")
-    file_name = models.CharField(max_length=255, verbose_name="Tên file")
-    file_path = models.CharField(max_length=1024, verbose_name="Đường dẫn file")
+    file_name = models.CharField(max_length=255, verbose_name="Tên file hiển thị")
+    file_upload = models.FileField(upload_to='documents/', verbose_name="File upload")
     uploaded_at = models.DateTimeField(auto_now_add=True, verbose_name="Ngày tải lên")
 
     def __str__(self):
