@@ -6,6 +6,10 @@ const postService = {
     create: (classId, data) => axiosClient.post(`/classes/${classId}/posts/`, data),
     addComment: (classId, postId, data) =>
         axiosClient.post(`/classes/${classId}/posts/${postId}/comments/`, data),
+    uploadDocument: (classId, postId, data) =>
+        axiosClient.post(`/classes/${classId}/posts/${postId}/documents/upload/`, data),
+    getDocuments: (classId, postId) =>
+        axiosClient.get(`/classes/${classId}/posts/${postId}/documents/`),
 };
 
 // Service quản lý tài liệu

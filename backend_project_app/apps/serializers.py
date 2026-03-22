@@ -87,7 +87,7 @@ class DocumentSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Document
-        fields = ('id', 'post', 'file_name', 'file_url', 'uploaded_at')
+        fields = ('id', 'post', 'file_name', 'file_path', 'uploaded_at')
         read_only_fields = ('post', )
 from rest_framework import serializers
 from apps.models import AttendanceSession, AttendanceRecord

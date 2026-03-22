@@ -24,6 +24,10 @@ urlpatterns = [
     path('', include('apps.urls')),
 ]
 
+# Serve media files in development
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+
 # Serve media files trong development (DEBUG=True)
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
