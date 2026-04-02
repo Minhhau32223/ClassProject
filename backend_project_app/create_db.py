@@ -1,10 +1,8 @@
-import MySQLdb
-
+﻿import MySQLdb
 try:
-    db = MySQLdb.connect(host="localhost", user="root", passwd="123456")
+    db = MySQLdb.connect(host='127.0.0.1', user='root', passwd='')
     cursor = db.cursor()
-    cursor.execute("CREATE DATABASE IF NOT EXISTS dacn_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;")
-    print("Database dacn_db created or already exists!")
-    db.close()
+    cursor.execute('CREATE DATABASE IF NOT EXISTS dacn_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;')
+    print('Database created successfully!')
 except Exception as e:
-    print("Error creating database:", e)
+    print('Error:', e)

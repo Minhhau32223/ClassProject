@@ -429,26 +429,66 @@ body {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.35);
+  background: rgba(0, 0, 0, 0.5);
   z-index: 999;
   display: flex;
   align-items: center;
   justify-content: center;
+  backdrop-filter: blur(4px);
 }
 
 .modal {
   background: #fff;
   border-radius: var(--radius);
   padding: 28px 32px;
-  max-width: 400px;
-  width: 90%;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18);
+  max-width: 720px;
+  width: 95%;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.22);
+  max-height: 90vh;
+  overflow-y: auto;
 }
 
 .modal h3 {
   font-size: 18px;
   font-weight: 700;
   margin-bottom: 18px;
+}
+
+/* SCANNING PULSE */
+@keyframes scan-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.5); }
+  50% { box-shadow: 0 0 0 14px rgba(59, 130, 246, 0.05); }
+}
+
+.scan-active-border {
+  animation: scan-pulse 1.5s ease-in-out infinite;
+  border: 3px solid #3b82f6 !important;
+  border-radius: 50% !important;
+}
+
+/* SESSION BADGES */
+.session-badge-active {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: #dcfce7;
+  color: #16a34a;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.session-badge-closed {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 /* POSTS TIMELINE */

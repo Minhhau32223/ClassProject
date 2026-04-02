@@ -16,7 +16,9 @@ export function useAuth() {
         try {
             const payload = JSON.parse(atob(accessToken.split('.')[1]));
             localStorage.setItem(STORAGE_KEYS.USER_ID, payload.user_id);
-        } catch (_) { }
+        } catch (e) {
+            console.error('Failed to parse token', e);
+        }
         localStorage.setItem(STORAGE_KEYS.USERNAME, username);
     };
 

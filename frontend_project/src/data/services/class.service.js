@@ -7,9 +7,7 @@ const classService = {
     myClasses: () => axiosClient.get('/classes/my/'),
     getMembers: (classId) => axiosClient.get(`/classes/${classId}/members/`),
     registerFace: (classId, formData) =>
-        axiosClient.post(`/classes/${classId}/register-face/`, formData, {
-            headers: { 'Content-Type': 'multipart/form-data' },
-        }),
+        axiosClient.post(`/classes/${classId}/register-face/`, formData),
 };
 
 export default classService;

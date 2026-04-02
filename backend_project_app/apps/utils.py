@@ -45,10 +45,14 @@ def get_embedding_from_image(image_bytes):
         # Không tìm thấy khuôn mặt nào
         return None
 
-    # Lấy khuôn mặt có độ tự tin (confidence) cao nhất hoặc lớn nhất
-    # Trong phiên bản đơn giản, lấy khuôn mặt đầu tiên tìm được
-    bounding_box = results[0]['box']
+    # Lấy khuôn mặt có độ tự tin cao nhất thay vì phần tử đầu tiên (Fix Multi-Face)
+    best_face = max(results, key=lambda f: f['confidence'])
+    bounding_box = best_face['box']
     x, y, w, h = bounding_box
+    
+    # Validate cấu trúc hộp khuôn mặt lỗi
+    if w <= 0 or h <= 0:
+        return None
     
     # Cắt khuôn mặt khỏi ảnh gốc
     # Xử lý trường hợp bounding_box có tọa độ âm ở viền ảnh
@@ -74,10 +78,18 @@ def compare_faces(vector1, vector2, threshold=0.4):
     Tại hàm này, mình sẽ cho qua nếu Cosine Distance < threshold.
     FaceNet thường dùng Threshold ~ 0.4 hoặc 0.5.
     """
+    import json
+    import ast
     if not isinstance(vector1, list):
-        vector1 = eval(vector1)
+        try:
+            vector1 = json.loads(vector1)
+        except Exception:
+            vector1 = ast.literal_eval(vector1)
     if not isinstance(vector2, list):
-        vector2 = eval(vector2)
+        try:
+            vector2 = json.loads(vector2)
+        except Exception:
+            vector2 = ast.literal_eval(vector2)
         
     v1 = np.array(vector1)
     v2 = np.array(vector2)
@@ -88,3 +100,22 @@ def compare_faces(vector1, vector2, threshold=0.4):
     # Nếu distance thấp hơn ngưỡng cho phép -> Khớp (True)
     is_match = distance < threshold
     return is_match, distance
+
+def l2_normalize(x):
+    norm = np.linalg.norm(x)
+    if norm == 0:
+        return x
+    return x / norm
+
+def get_average_embedding(vector_list):
+    """
+    Nhận vào danh sách các vectors, Normalize từng vector, lấy Mean, rồi Normalize lại lần nữa.
+    Luôn đảm bảo Vector nằm trên bề mặt chuẩn không gian 512D.
+    """
+    if not vector_list:
+        return None
+        
+    arr = [l2_normalize(np.array(v)) for v in vector_list]
+    mean_vec = np.mean(arr, axis=0)
+    final_vec = l2_normalize(mean_vec)
+    return final_vec.tolist()
