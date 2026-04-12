@@ -123,12 +123,9 @@ class AttendanceSession(models.Model):
     session_token = models.CharField(max_length=255, unique=True, blank=True, verbose_name="Mã phiên/QR (session_token)")
     start_time = models.DateTimeField(verbose_name="Thời gian bắt đầu")
     end_time = models.DateTimeField(verbose_name="Thời gian kết thúc")
-    # Địa chỉ mạng của giáo viên tạo phiên - dùng để xác thực IP học viên khi check-in
-    creator_ip = models.GenericIPAddressField(null=True, blank=True, verbose_name="IP người tạo")
-    creator_network = models.CharField(max_length=50, null=True, blank=True, verbose_name="Subnet mạng nội bộ")
 
     def save(self, *args, **kwargs):
-        # Tự động sinh session_token ngỪu nhiên để làm link hoặc QR nếu thiếu thiết lập
+        # Tự động sinh session_token ngẫu nhiên để làm link hoặc QR nếu thiếu thiết lập
         if not self.session_token:
             self.session_token = ''.join(random.choices(string.ascii_letters + string.digits, k=32))
         super().save(*args, **kwargs)

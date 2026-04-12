@@ -3,7 +3,7 @@ import Webcam from 'react-webcam';
 import { postService } from '../../data/services/post.service';
 import classService from '../../data/services/class.service';
 import attendanceService from '../../data/services/attendance.service';
-import { vi } from 'date-fns/locale';
+import {vi} from 'date-fns/locale';
 import { formatDistanceToNow } from 'date-fns';
 import Modal from '../../shared/components/Modal';
 
@@ -46,35 +46,35 @@ function PostItem({ post, classId }) {
         <div className="post-card">
             <div className="post-meta">
                 <strong>{post.author_name}</strong> · <span style={{ color: '#64748b', marginLeft: 4 }}>
-                    {formatDistanceToNow(new Date(post.created_at), { addSuffix: true, locale: vi })}
-                </span>
+                {formatDistanceToNow(new Date(post.created_at), { addSuffix: true, locale: vi })}
+            </span>
             </div>
             <div className="post-content">{post.content}</div>
             {/* Hiển thị documents if have any */}
             {documents && documents.length > 0 && (
                 <div>
                     {documents.map(doc => (
-                        <div key={doc.id} style={{
-                            marginBottom: 15,
-                            padding: '10px 14px',
-                            background: '#f8fafc',
-                            borderRadius: 8,
+                        <div key={doc.id} style={{ 
+                            marginBottom: 15, 
+                            padding: '10px 14px', 
+                            background: '#f8fafc', 
+                            borderRadius: 8, 
                             border: '1px solid #e2e8f0',
                             display: 'flex',
                             alignItems: 'center',
                             gap: 10
                         }}>
                             <span style={{ fontSize: 18 }}>📄</span>
-                            <a
-                                href={doc.file_url || doc.file_path}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                style={{
-                                    textDecoration: 'none',
-                                    color: '#2563eb',
-                                    fontSize: 13,
+                            <a 
+                                href={doc.file_url || doc.file_path} 
+                                target="_blank" 
+                                rel="noopener noreferrer" 
+                                style={{ 
+                                    textDecoration: 'none', 
+                                    color: '#2563eb', 
+                                    fontSize: 13, 
                                     fontWeight: 600,
-                                    wordBreak: 'break-all'
+                                    wordBreak: 'break-all' 
                                 }}
                             >
                                 {doc.file_name}
@@ -183,7 +183,7 @@ export default function ClassDetailPage({ cls, onBack, username }) {
     const [needFaceReg, setNeedFaceReg] = useState(false);
     const [capturing, setCapturing] = useState(false);
     const webcamRef = useRef(null);
-
+    
     // UI Modal Đăng ký KM
     const [showFaceModal, setShowFaceModal] = useState(false);
     const [regStep, setRegStep] = useState(1);
@@ -198,7 +198,6 @@ export default function ClassDetailPage({ cls, onBack, username }) {
     const [checkInSession, setCheckInSession] = useState(null); // Phiên đang check-in
     const [scanStatus, setScanStatus] = useState('idle'); // idle | scanning | success | error
     const [scanMessage, setScanMessage] = useState('');
-    const [faceNotRegistered, setFaceNotRegistered] = useState(false); // chưa đăng ký mặt
     const scanIntervalRef = useRef(null);
     const checkInWebcamRef = useRef(null);
 
@@ -220,12 +219,12 @@ export default function ClassDetailPage({ cls, onBack, username }) {
                 attendanceService.getActiveSessions(cls.id),
                 attendanceService.getSessions(cls.id)
             ])
-                .then(([activeRes, allRes]) => {
-                    setActiveSessions(activeRes.data);
-                    setAllSessions(allRes.data);
-                })
-                .catch(err => console.error('Load attendance failed:', err))
-                .finally(() => setLoadingTab(false));
+            .then(([activeRes, allRes]) => {
+                setActiveSessions(activeRes.data);
+                setAllSessions(allRes.data);
+            })
+            .catch(err => console.error('Load attendance failed:', err))
+            .finally(() => setLoadingTab(false));
         } else {
             setLoadingTab(false);
         }
@@ -238,14 +237,14 @@ export default function ClassDetailPage({ cls, onBack, username }) {
         try {
             // Step 1: Create the post with just content
             const r = await postService.create(cls.id, { content: newPost });
-
+            
             // Step 2: If file selected, upload it as a document
             let uploadedDoc = null;
             if (selectedFile && r.data.id) {
                 const docFormData = new FormData();
                 docFormData.append('file_name', selectedFile.name);
                 docFormData.append('file', selectedFile);
-
+                
                 try {
                     const docRes = await postService.uploadDocument(cls.id, r.data.id, docFormData);
                     uploadedDoc = docRes.data;
@@ -253,12 +252,12 @@ export default function ClassDetailPage({ cls, onBack, username }) {
                     console.warn('Document upload failed, but post was created:', docErr);
                 }
             }
-
+            
             // Add the new post to the list with empty documents array
             setPosts(prev => [{ ...r.data, documents: uploadedDoc ? [uploadedDoc] : [] }, ...prev]);
             setNewPost('');
             setSelectedFile(null);
-        } catch (e) {
+        } catch (e) { 
             console.error(e);
         }
         setPosting(false);
@@ -272,18 +271,18 @@ export default function ClassDetailPage({ cls, onBack, username }) {
 
     const handleCaptureFace = () => {
         const imageSrc = webcamRef.current.getScreenshot();
-        if (!imageSrc) return;
-
+        if(!imageSrc) return;
+        
         fetch(imageSrc).then(res => res.blob()).then(blob => {
             if (regStep === 1) setFaces(p => ({ ...p, front: blob }));
             if (regStep === 2) setFaces(p => ({ ...p, left: blob }));
             if (regStep === 3) setFaces(p => ({ ...p, right: blob }));
-
+            
             if (regStep < 3) {
                 setRegStep(regStep + 1);
             } else {
                 // Done step 3, tiến hành upload
-                submitFaceRegistration({ ...faces, right: blob });
+                submitFaceRegistration({ ...faces, right: blob }); 
             }
         });
     }
@@ -295,14 +294,14 @@ export default function ClassDetailPage({ cls, onBack, username }) {
             formData.append('image_front', finalFaces.front, 'front.jpg');
             formData.append('image_left', finalFaces.left, 'left.jpg');
             formData.append('image_right', finalFaces.right, 'right.jpg');
-
+            
             await classService.registerFace(cls.id, formData);
             alert('Đăng ký khuôn mặt 3 góc độ thành công!');
-
+            
             setShowFaceModal(false);
             setNeedFaceReg(false);
             postService.list(cls.id).then(r => setPosts(r.data)); // reload list
-        } catch (e) {
+        } catch(e) {
             alert(e.response?.data?.error || 'Lỗi đăng ký khuôn mặt.');
             // Reset cho người dùng chụp lại
             setRegStep(1);
@@ -386,25 +385,10 @@ export default function ClassDetailPage({ cls, onBack, username }) {
                         setScanStatus('error');
                         setScanMessage('Phiên điểm danh đã kết thúc.');
                     } else if (httpStatus === 403) {
-                        const errCode = err.response?.data?.code || '';
-                        if (errCode === 'FACE_NOT_REGISTERED') {
-                            // Chưa đăng ký khuôn mặt → dừng và báo riêng
-                            stopAutoScan();
-                            setScanStatus('error');
-                            setFaceNotRegistered(true);
-                        } else if (errCode === 'WRONG_NETWORK') {
-                            // Sai mạng nội bộ → dừng ngay, hiển thông tin rõ ràng
-                            stopAutoScan();
-                            setScanStatus('error');
-                            const studentIp = err.response?.data?.student_ip || '?';
-                            const requiredNet = err.response?.data?.required_network || '?';
-                            setScanMessage(`IP của bạn (${studentIp}) không thuộc mạng lớp học (${requiredNet}). Hãy kết nối WiFi của trường!`);
-                        } else {
-                            // Lỗi IP / quyền khác
-                            stopAutoScan();
-                            setScanStatus('error');
-                            setScanMessage(errMsg || 'Không có quyền điểm danh.');
-                        }
+                        // Lỗi mạng / IP
+                        stopAutoScan();
+                        setScanStatus('error');
+                        setScanMessage(errMsg || 'Không có quyền điểm danh.');
                     } else if (httpStatus === 400) {
                         // Không khớp mặt hoặc không tìm thấy mặt → tiếp tục quét
                         setScanMessage(`Lần ${retryCount}: chưa nhận diện được - đang thử lại...`);
@@ -431,7 +415,6 @@ export default function ClassDetailPage({ cls, onBack, username }) {
         setCheckInSession(null);
         setScanStatus('idle');
         setScanMessage('');
-        setFaceNotRegistered(false);
     };
 
     const tabStyle = (t) => ({
@@ -451,68 +434,68 @@ export default function ClassDetailPage({ cls, onBack, username }) {
 
     return (
         <div>
-            <button onClick={onBack} style={{ background: 'none', border: 'none', color: '#000000', fontSize: 16, fontWeight: 700, cursor: 'pointer', marginBottom: 12 }}>
+            <button onClick={onBack} style={{ background: 'none', border: 'none', color: '#000000', fontSize: 16,fontWeight: 700 , cursor: 'pointer', marginBottom: 12 }}>
                 ←     Quay lại
             </button>
-            {/* Header lớp học */}
-            <div style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'flex-start',
-                padding: '20px 24px',
-                background: '#ffffff',
-                borderRadius: 16,
-                boxShadow: '0 6px 20px rgba(0,0,0,0.06)',
-                marginBottom: 20
-            }}>
-                {/* LEFT */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {/* Header lớp học */}
+        <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+            padding: '20px 24px',
+            background: '#ffffff',
+            borderRadius: 16,
+            boxShadow: '0 6px 20px rgba(0,0,0,0.06)',
+            marginBottom: 20
+        }}>
+            {/* LEFT */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                
+                {/* Tên lớp + role */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>
+                        {cls.class_name}
+                    </h1>
 
-                    {/* Tên lớp + role */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>
-                            {cls.class_name}
-                        </h1>
+                <span style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    background: isCreator ? '#e0edff' : '#dcfce7',
+                    color: isCreator ? '#1d4ed8' : '#16a34a',
+                    fontSize: 12,
+                    padding: '5px 12px',
+                    borderRadius: 999,
+                    fontWeight: 600
+                }}>
+                    {isCreator ? 'Người tạo' : 'Thành viên'}
+                </span>
 
+                </div>
+
+                {/* Mã lớp + số thành viên */}
+                <div style={{ display: 'flex', gap: 16, fontSize: 15 }}>
+                    <span>
+                        Mã lớp: 
                         <span style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            background: isCreator ? '#e0edff' : '#dcfce7',
-                            color: isCreator ? '#1d4ed8' : '#16a34a',
-                            fontSize: 12,
-                            padding: '5px 12px',
-                            borderRadius: 999,
+                            background: '#f1f5f9',
+                            padding: '2px 8px',
+                            borderRadius: 6,
+                            marginLeft: 6,
                             fontWeight: 600
                         }}>
-                            {isCreator ? 'Người tạo' : 'Thành viên'}
+                            {cls.class_code}
                         </span>
+                    </span>
 
-                    </div>
-
-                    {/* Mã lớp + số thành viên */}
-                    <div style={{ display: 'flex', gap: 16, fontSize: 15 }}>
-                        <span>
-                            Mã lớp:
-                            <span style={{
-                                background: '#f1f5f9',
-                                padding: '2px 8px',
-                                borderRadius: 6,
-                                marginLeft: 6,
-                                fontWeight: 600
-                            }}>
-                                {cls.class_code}
-                            </span>
-                        </span>
-
-                        <span style={{ color: '#64748b' }}>
-                            {cls.member_count || 1} thành viên
-                        </span>
-                    </div>
+                    <span style={{ color: '#64748b' }}>
+                        {cls.member_count || 1} thành viên
+                    </span>
                 </div>
             </div>
+        </div>
 
             {/* Tabs */}
-            <div style={{ display: 'inline-flex', background: '#d6dce3', borderRadius: 12, padding: 4, marginBottom: 20, width: '100%' }}>
+            <div style={{display: 'inline-flex',background: '#d6dce3', borderRadius: 12,padding: 4, marginBottom: 20,  width: '100%' }}>
                 <button style={tabStyle('posts')} onClick={() => setTab('posts')}>📋 Bài viết</button>
                 <button style={tabStyle('members')} onClick={() => setTab('members')}>👥 Thành viên</button>
                 <button style={tabStyle('attendance')} onClick={() => setTab('attendance')}>✅ Điểm danh</button>
@@ -527,7 +510,7 @@ export default function ClassDetailPage({ cls, onBack, username }) {
                             <div style={{ fontSize: 40, marginBottom: 16 }}>🔒</div>
                             <h3 style={{ marginBottom: 12 }}>Yêu cầu Face Registration</h3>
                             <p style={{ color: '#64748b', marginBottom: 20 }}>Bạn bắt buộc phải xác minh nhân dạng 3 góc khuôn mặt trước khi truy cập nội dung lớp học.</p>
-
+                            
                             <button className="btn btn-filled" onClick={() => {
                                 setShowFaceModal(true);
                                 setRegStep(1);
@@ -549,12 +532,12 @@ export default function ClassDetailPage({ cls, onBack, username }) {
                                             style={{ flex: 1, padding: '10px 14px', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 14, resize: 'vertical' }}
                                         />
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                            {/* Nút tải lên tài liệu giả lập bằng nhãn label */}
+                                        {/* Nút tải lên tài liệu giả lập bằng nhãn label */}
                                             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                                <label style={{
-                                                    padding: '8px 12px',
-                                                    background: '#f1f5f9',
-                                                    borderRadius: 6,
+                                                <label style={{ 
+                                                    padding: '8px 12px', 
+                                                    background: '#f1f5f9', 
+                                                    borderRadius: 6, 
                                                     cursor: 'pointer',
                                                     fontSize: 13,
                                                     display: 'flex',
@@ -564,16 +547,16 @@ export default function ClassDetailPage({ cls, onBack, username }) {
                                                     border: '1px solid #e2e8f0'
                                                 }}>
                                                     📁 {selectedFile ? 'Đổi file' : 'Đính kèm tài liệu'}
-                                                    <input
-                                                        type="file"
-                                                        style={{ display: 'none' }}
-                                                        onChange={(e) => setSelectedFile(e.target.files[0])}
+                                                    <input 
+                                                        type="file" 
+                                                        style={{ display: 'none' }} 
+                                                        onChange={(e) => setSelectedFile(e.target.files[0])} 
                                                     />
                                                 </label>
-                                                <button className="btn-sm btn-filled" type="submit" disabled={posting}>
+                                                 <button className="btn-sm btn-filled" type="submit" disabled={posting}>
                                                     {posting ? 'Đang đăng' : 'Đăng bài'}
                                                 </button>
-
+                                                
                                                 {selectedFile && (
                                                     <span style={{ fontSize: 12, color: '#22c55e', maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                                         ✅ {selectedFile.name}
@@ -603,41 +586,41 @@ export default function ClassDetailPage({ cls, onBack, username }) {
                         <div className="loading">Đang tải...</div>
                     ) : (
                         <>
-                            <p style={{ marginBottom: 12 }}>
-                                <strong>Tổng thành viên:</strong> {members.length}
-                            </p>
-
-                            <table>
-                                <thead>
-                                    <tr><th>Họ tên</th><th>Username</th><th>Khuôn mặt</th><th>Ngày tham gia</th></tr>
-                                </thead>
-                                <tbody>
-                                    {members.map(m => (
-                                        <tr key={m.id}>
-                                            <td><strong>{m.user.full_name}</strong></td>
-                                            <td style={{ color: '#64748b' }}>@{m.user.username}</td>
-                                            <td>
-                                                <span
-                                                    style={{
-                                                        display: 'inline-flex',
-                                                        alignItems: 'center',
-                                                        gap: 6,
-                                                        padding: '4px 10px',
-                                                        borderRadius: 999,
-                                                        fontSize: 12,
-                                                        fontWeight: 600,
-                                                        background: m.face_registered ? '#f0fdf4' : '#fef2f2',
-                                                        color: m.face_registered ? '#16a34a' : '#dc2626'
-                                                    }}
-                                                >
-                                                    {m.face_registered ? '✔ Đã xác thực' : '✖ Chưa xác thực'}
-                                                </span>
-                                            </td>
-                                            <td style={{ color: '#94a3b8' }}>{new Date(m.joined_at).toLocaleDateString('vi-VN')}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
+                        <p style={{ marginBottom: 12 }}>
+                            <strong>Tổng thành viên:</strong> {members.length}
+                        </p>
+                        
+                        <table>
+                            <thead>
+                                <tr><th>Họ tên</th><th>Username</th><th>Khuôn mặt</th><th>Ngày tham gia</th></tr>
+                            </thead>
+                            <tbody>
+                                {members.map(m => (
+                                    <tr key={m.id}>
+                                        <td><strong>{m.user.full_name}</strong></td>
+                                        <td style={{ color: '#64748b' }}>@{m.user.username}</td>
+                                        <td>
+                                            <span
+                                                style={{
+                                                    display: 'inline-flex',
+                                                    alignItems: 'center',
+                                                    gap: 6,
+                                                    padding: '4px 10px',
+                                                    borderRadius: 999,
+                                                    fontSize: 12,
+                                                    fontWeight: 600,
+                                                    background: m.face_registered ? '#f0fdf4' : '#fef2f2',
+                                                    color: m.face_registered ? '#16a34a' : '#dc2626'
+                                                }}
+                                            >
+                                                {m.face_registered ? '✔ Đã xác thực' : '✖ Chưa xác thực'}
+                                            </span>
+                                        </td>
+                                        <td style={{ color: '#94a3b8' }}>{new Date(m.joined_at).toLocaleDateString('vi-VN')}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
                         </>
                     )}
                 </div>
@@ -767,15 +750,15 @@ export default function ClassDetailPage({ cls, onBack, username }) {
                         <p style={{ fontSize: 18, fontWeight: 'bold', color: '#2563eb', marginBottom: 10 }}>
                             Bước {regStep}/3: {instructions[regStep]}
                         </p>
-                        <div style={{
-                            width: '100%',
+                        <div style={{ 
+                            width: '100%', 
                             maxWidth: 640,
                             aspectRatio: '4/3',
-                            margin: '0 auto 20px',
-                            background: '#e2e8f0',
-                            borderRadius: 12,
-                            overflow: 'hidden',
-                            position: 'relative'
+                            margin: '0 auto 20px', 
+                            background: '#e2e8f0', 
+                            borderRadius: 12, 
+                            overflow: 'hidden', 
+                            position: 'relative' 
                         }}>
                             <Webcam
                                 audio={false}
@@ -785,21 +768,21 @@ export default function ClassDetailPage({ cls, onBack, username }) {
                                 style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scaleX(-1)' }}
                             />
                             {/* Overlay mask */}
-                            <div style={{
-                                position: 'absolute',
-                                top: '10%',
-                                left: '20%',
-                                right: '20%',
-                                bottom: '15%',
-                                border: '3px dashed #3b82f6',
+                            <div style={{ 
+                                position: 'absolute', 
+                                top: '10%', 
+                                left: '20%', 
+                                right: '20%', 
+                                bottom: '15%', 
+                                border: '3px dashed #3b82f6', 
                                 borderRadius: '50%',
                                 opacity: 0.6
                             }}></div>
                         </div>
-                        <button
-                            className="btn btn-filled"
-                            onClick={handleCaptureFace}
-                            disabled={capturing}
+                        <button 
+                            className="btn btn-filled" 
+                            onClick={handleCaptureFace} 
+                            disabled={capturing} 
                             style={{ fontSize: 16, padding: '10px 30px', maxWidth: 300, margin: '0 auto' }}
                         >
                             {capturing ? 'Đang phân tích AI...' : '📸 Chụp Góc Này'}
@@ -892,49 +875,14 @@ export default function ClassDetailPage({ cls, onBack, username }) {
                         )}
 
                         {scanStatus === 'error' && (
-                            faceNotRegistered ? (
-                                /* UI ĐẶC BIỆT: Chưa đăng ký khuôn mặt */
-                                <div style={{ padding: '20px 0' }}>
-                                    <div style={{ fontSize: 64, marginBottom: 16 }}>&#128721;</div>
-                                    <h3 style={{ color: '#b45309', marginBottom: 8, fontSize: 20 }}>Chưa đăng ký khuôn mặt</h3>
-                                    <p style={{ color: '#64748b', marginBottom: 6, lineHeight: 1.6 }}>
-                                        Bạn chưa đăng ký khuôn mặt với lớp học này.<br />
-                                        Vui lòng <strong>chụp ảnh 3 góc</strong> để hệ thống nhận diện bạn trước.
-                                    </p>
-                                    <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginTop: 20, flexWrap: 'wrap' }}>
-                                        <button
-                                            className="btn btn-filled"
-                                            style={{ maxWidth: 240, fontSize: 14 }}
-                                            onClick={() => {
-                                                handleCloseCheckInModal();
-                                                // Mở UI đăng ký khuôn mặt ngay
-                                                setShowFaceModal(true);
-                                                setRegStep(1);
-                                                setFaces({ front: null, left: null, right: null });
-                                            }}
-                                        >
-                                            📸 Đăng ký khuôn mặt ngay
-                                        </button>
-                                        <button
-                                            className="btn-sm"
-                                            style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '8px 18px' }}
-                                            onClick={handleCloseCheckInModal}
-                                        >
-                                            Đóng
-                                        </button>
-                                    </div>
-                                </div>
-                            ) : (
-                                /* UI lỗi thông thường */
-                                <div style={{ padding: '20px 0' }}>
-                                    <div style={{ fontSize: 64, marginBottom: 16 }}>❌</div>
-                                    <h3 style={{ color: '#dc2626', marginBottom: 8, fontSize: 20 }}>Thất Bại</h3>
-                                    <p style={{ color: '#64748b', marginBottom: 20 }}>{scanMessage}</p>
-                                    <button className="btn-sm" style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '8px 20px' }} onClick={handleCloseCheckInModal}>
-                                        Đóng
-                                    </button>
-                                </div>
-                            )
+                            <div style={{ padding: '20px 0' }}>
+                                <div style={{ fontSize: 64, marginBottom: 16 }}>❌</div>
+                                <h3 style={{ color: '#dc2626', marginBottom: 8, fontSize: 20 }}>Thất Bại</h3>
+                                <p style={{ color: '#64748b', marginBottom: 20 }}>{scanMessage}</p>
+                                <button className="btn-sm" style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '8px 20px' }} onClick={handleCloseCheckInModal}>
+                                    Đóng
+                                </button>
+                            </div>
                         )}
                     </div>
                 </Modal>

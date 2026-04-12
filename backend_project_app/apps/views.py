@@ -413,46 +413,6 @@ from apps.models import AttendanceSession, AttendanceRecord, FaceRegistration
 from apps.serializers import AttendanceSessionSerializer, AttendanceRecordSerializer
 from django.utils import timezone
 import math
-import ipaddress
-
-def get_client_ip(request):
-    """Lấy IP thật của người dùng, xử lý cả trường hợp qua proxy/load balancer."""
-    x_forwarded = request.META.get('HTTP_X_FORWARDED_FOR')
-    if x_forwarded:
-        # X-Forwarded-For: client_ip, proxy1, proxy2 => lấy cái đầu tiên
-        ip = x_forwarded.split(',')[0].strip()
-    else:
-        ip = request.META.get('REMOTE_ADDR', '127.0.0.1')
-    return ip
-
-def detect_network_info(ip_str):
-    """
-    Dùng thư viện ipaddress để phân tích IP và suy ra subnet mạng nội bộ.
-    Trả về (is_private, network_cidr).
-    Ví dụ: '192.168.1.105' → (True, '192.168.1.0/24')
-    Ví dụ: '10.0.0.55'    → (True, '10.0.0.0/24')
-    Ví dụ: '203.x.x.x'   → (False, '203.x.x.0/24')
-    """
-    try:
-        ip_obj = ipaddress.ip_address(ip_str)
-        is_private = ip_obj.is_private or ip_obj.is_loopback
-        # Tính subnet /24 (255.255.255.0) - cùng 3 octet đầu là cùng mạng
-        network = ipaddress.ip_network(f"{ip_str}/24", strict=False)
-        return is_private, str(network)
-    except ValueError:
-        return False, None
-
-def is_same_network(student_ip, creator_network_cidr):
-    """
-    Kiểm tra học viên có trong cùng subnet mạng với giáo viên tạo phiên không.
-    Trả về True nếu học viên ở trong creator_network_cidr.
-    """
-    try:
-        student_ip_obj = ipaddress.ip_address(student_ip)
-        network_obj = ipaddress.ip_network(creator_network_cidr, strict=False)
-        return student_ip_obj in network_obj
-    except ValueError:
-        return False
 
 class AttendanceSessionCreateView(APIView):
     """
@@ -472,25 +432,15 @@ class AttendanceSessionCreateView(APIView):
         
         if not start_time or not end_time:
             return Response({"error": "Cần cung cấp thời gian bắt đầu (start_time) và kết thúc (end_time)."}, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Phân tích mạng của giáo viên ngay lúc tạo phiên
-        creator_ip = get_client_ip(request)
-        is_private, creator_network = detect_network_info(creator_ip)
-        
+            
         session = AttendanceSession.objects.create(
             class_room=class_room,
             created_by=request.user,
             start_time=start_time,
-            end_time=end_time,
-            creator_ip=creator_ip,
-            creator_network=creator_network
+            end_time=end_time
         )
         serializer = AttendanceSessionSerializer(session)
-        # Kèm thông tin mạng vào response để hiển thị trên UI giáo viên
-        resp_data = serializer.data
-        resp_data['creator_ip'] = creator_ip
-        resp_data['creator_network'] = creator_network
-        return Response(resp_data, status=status.HTTP_201_CREATED)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     def get(self, request, class_id):
         """
@@ -536,40 +486,19 @@ class AttendanceCheckInView(APIView):
             
         member = get_object_or_404(ClassMember, user=request.user, class_room=class_room)
         
-        # 2. Kiểm tra IP mạng nội bộ bằng ipaddress
-        student_ip = get_client_ip(request)
-        
-        if session.creator_network:
-            # Có thông tin mạng giáo viên → kiểm tra học viên có cùng subnet không
-            student_ip_obj = ipaddress.ip_address(student_ip)
-            is_loopback = student_ip_obj.is_loopback  # 127.0.0.1 (dev local)
-            
-            if not is_loopback and not is_same_network(student_ip, session.creator_network):
-                teacher_net = session.creator_network
-                return Response({
-                    "error": f"Từ chối điểm danh. Mạng của bạn ({student_ip}) không thuộc cùng subnet với giáo viên ({teacher_net}).",
-                    "code": "WRONG_NETWORK",
-                    "student_ip": student_ip,
-                    "required_network": teacher_net
-                }, status=status.HTTP_403_FORBIDDEN)
-        else:
-            # Không có thông tin mạng (phiên cũ ) → dùng fallback kiểm tra dải IP nội bộ cơ bản
-            student_ip_obj = ipaddress.ip_address(student_ip)
-            if not (student_ip_obj.is_private or student_ip_obj.is_loopback):
-                return Response({"error": "Từ chối. Bạn không sử dụng mạng nội bộ."}, status=status.HTTP_403_FORBIDDEN)
+        # 2. Kiểm tra IP Nội bộ (Giả lập đơn giản)
+        # Trong thực tế, đọc từ request.META.get('REMOTE_ADDR')
+        client_ip = request.META.get('REMOTE_ADDR', '127.0.0.1')
+        is_internal = client_ip.startswith('192.168.') or client_ip.startswith('10.') or client_ip == '127.0.0.1'
+        if not is_internal:
+            return Response({"error": "Từ chối truy cập. Bạn không sử dụng mạng nội bộ của trường."}, status=status.HTTP_403_FORBIDDEN)
 
-        # 3. Kiểm tra đăng ký khuôn mặt
+        # 3. So khớp Vector khuôn mặt
         image_file = request.FILES.get('checkin_image')
         if not image_file:
              return Response({"error": "Yêu cầu cung cấp file ảnh chụp hiện tại (checkin_image)."}, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            face_reg = FaceRegistration.objects.get(class_member=member)
-        except FaceRegistration.DoesNotExist:
-            return Response({
-                "error": "Bạn chưa đăng ký khuôn mặt. Vui lòng đăng ký trước khi điểm danh.",
-                "code": "FACE_NOT_REGISTERED"
-            }, status=status.HTTP_403_FORBIDDEN)
+             
+        face_reg = get_object_or_404(FaceRegistration, class_member=member)
         
         is_match = False
         distance = 0.0  # Giá trị mặc định an toàn
