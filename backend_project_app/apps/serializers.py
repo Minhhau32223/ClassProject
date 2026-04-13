@@ -67,10 +67,19 @@ class PostSerializer(serializers.ModelSerializer):
     author_name = serializers.ReadOnlyField(source='author.full_name')
     comments = CommentSerializer(many=True, read_only=True)
     comment_count = serializers.IntegerField(read_only=True)
+    documents = serializers.SerializerMethodField()
+
+    def get_documents(self, obj):
+        request = self.context.get('request')
+        return DocumentSerializer(
+            obj.documents.all(),
+            many=True,
+            context={'request': request} if request else {}
+        ).data
 
     class Meta:
         model = Post
-        fields = ('id', 'class_room', 'author', 'author_name', 'content', 'created_at', 'comments', 'comment_count')
+        fields = ('id', 'class_room', 'author', 'author_name', 'content', 'created_at', 'comments', 'comment_count', 'documents')
         read_only_fields = ('author', 'class_room')
 from rest_framework import serializers
 from apps.models import Document
@@ -81,13 +90,16 @@ class DocumentSerializer(serializers.ModelSerializer):
 
     def get_file_url(self, obj):
         request = self.context.get('request')
-        if obj.file_upload and request:
-            return request.build_absolute_uri(obj.file_upload.url)
-        return None
+        if not obj.file:
+            return obj.file_path or None
+        file_url = obj.file.url
+        if request:
+            return request.build_absolute_uri(file_url)
+        return file_url
 
     class Meta:
         model = Document
-        fields = ('id', 'post', 'file_name', 'file_path', 'uploaded_at')
+        fields = ('id', 'post', 'file_name', 'file_path', 'file_url', 'uploaded_at')
         read_only_fields = ('post', )
 from rest_framework import serializers
 from apps.models import AttendanceSession, AttendanceRecord
@@ -99,7 +111,7 @@ class AttendanceSessionSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = AttendanceSession
-        fields = ('id', 'class_room', 'created_by_user', 'session_token', 'start_time', 'end_time')
+        fields = ('id', 'class_room', 'created_by_user', 'session_token', 'start_time', 'end_time', 'creator_ip', 'creator_network')
         read_only_fields = ('class_room', 'created_by')
 
 class AttendanceRecordSerializer(serializers.ModelSerializer):

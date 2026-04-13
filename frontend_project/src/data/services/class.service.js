@@ -6,6 +6,8 @@ const classService = {
     join: (data) => axiosClient.post('/classes/join/', data),
     myClasses: () => axiosClient.get('/classes/my/'),
     getMembers: (classId) => axiosClient.get(`/classes/${classId}/members/`),
+    validateFaceImage: (classId, formData) =>
+        axiosClient.post(`/classes/${classId}/validate-face/`, formData),
     registerFace: (classId, formData) =>
         axiosClient.post(`/classes/${classId}/register-face/`, formData),
 };

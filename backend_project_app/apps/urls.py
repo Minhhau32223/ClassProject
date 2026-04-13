@@ -1,6 +1,6 @@
 from django.urls import path
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
-from apps.views import RegisterView, ClassCreateView, ClassJoinView, MyClassesView, ClassMembersView, ClassRegisterFaceView, PostListView, PostDetailView, CommentCreateView, CommentDetailView, DocumentUploadView, DocumentListView, DocDownloadView, AttendanceSessionCreateView, AttendanceCheckInView, AttendanceStatsView
+from apps.views import RegisterView, ClassCreateView, ClassJoinView, MyClassesView, ClassMembersView, ClassRegisterFaceView, ClassFaceValidateView, PostListView, PostDetailView, CommentCreateView, CommentDetailView, DocumentUploadView, DocumentListView, DocDownloadView, AttendanceSessionCreateView, AttendanceCheckInView, AttendanceStatsView
 
 urlpatterns = [
     # Auth Endpoints
@@ -14,6 +14,7 @@ urlpatterns = [
     path('classes/my/', MyClassesView.as_view(), name='classes_my'),
     path('classes/<int:class_id>/members/', ClassMembersView.as_view(), name='class_members'),
     path('classes/<int:class_id>/register-face/', ClassRegisterFaceView.as_view(), name='class_register_face'),
+    path('classes/<int:class_id>/validate-face/', ClassFaceValidateView.as_view(), name='class_validate_face'),
     
     # Posts & Comments Endpoints
     path('classes/<int:class_id>/posts/', PostListView.as_view(), name='class_posts'),

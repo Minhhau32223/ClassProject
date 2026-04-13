@@ -1,11 +1,59 @@
+import json
+import ipaddress
+
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.shortcuts import get_object_or_404
+# from apps.utils import is_live_image
 
 from apps.models import Class, ClassMember
 from apps.serializers import RegisterSerializer, ClassSerializer, ClassMemberSerializer
+
+
+def get_client_ip(request):
+    forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+    if forwarded_for:
+        return forwarded_for.split(',')[0].strip()
+    return request.META.get('REMOTE_ADDR', '').strip()
+
+
+def get_private_network_for_ip(ip_text):
+    try:
+        ip_obj = ipaddress.ip_address(ip_text)
+    except ValueError:
+        return None
+
+    if ip_obj.version == 4:
+        if ip_obj.is_loopback:
+            return ipaddress.ip_network('127.0.0.0/8')
+        if ip_obj.is_private:
+            return ipaddress.ip_network(f'{ip_obj}/24', strict=False)
+        return None
+
+    if ip_obj.is_loopback:
+        return ipaddress.ip_network('::1/128')
+    if ip_obj.is_private:
+        return ipaddress.ip_network(f'{ip_obj}/64', strict=False)
+    return None
+
+
+def is_ip_allowed_for_session(ip_text, session):
+    try:
+        attendee_ip = ipaddress.ip_address(ip_text)
+    except ValueError:
+        return False
+
+    if not session.creator_network:
+        return False
+
+    try:
+        creator_network = ipaddress.ip_network(session.creator_network, strict=False)
+    except ValueError:
+        return False
+
+    return attendee_ip.version == creator_network.version and attendee_ip in creator_network
 
 # 1. API Đăng ký người dùng
 class RegisterView(APIView):
@@ -102,6 +150,7 @@ class ClassMembersView(APIView):
 from apps.utils import get_embedding_from_image
 
 # 6. API Đăng ký khuôn mặt
+''''''
 class ClassRegisterFaceView(APIView):
     """
     API đăng ký khuôn mặt cho thành viên lớp.
@@ -109,7 +158,7 @@ class ClassRegisterFaceView(APIView):
     image_front, image_left, image_right (Định dạng multipart/form-data).
     """
     permission_classes = [IsAuthenticated]
-
+   
     def post(self, request, class_id):
         # 1. Tìm lớp và xác nhận là thành viên
         class_room = get_object_or_404(Class, id=class_id)
@@ -123,6 +172,7 @@ class ClassRegisterFaceView(APIView):
         image_front = request.FILES.get('image_front')
         image_left = request.FILES.get('image_left')
         image_right = request.FILES.get('image_right')
+            
 
         if not (image_front and image_left and image_right):
             return Response({"error": "Yêu cầu cung cấp đủ 3 file ảnh khuôn mặt (Front, Left, Right)."}, status=status.HTTP_400_BAD_REQUEST)
@@ -148,10 +198,10 @@ class ClassRegisterFaceView(APIView):
                 embedding_vector = get_average_embedding([emb_front, emb_left, emb_right])
                 
             except RuntimeError as rte:
-                # Xử lý ngoại lệ "AI Models are not initialized" do môi trường Dev chưa setup
-                import random
-                fake_list = [0.1, 0.2, 0.3, random.random()]
-                embedding_vector = str(fake_list)
+                return Response({
+                    "error": "Hệ thống nhận diện khuôn mặt chưa sẵn sàng. Vui lòng kiểm tra lại AI backend.",
+                    "details": str(rte)
+                }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
                 
         except Exception as e:
             # Nếu chưa cài thư viện AI, chặn ngay lập tức
@@ -173,6 +223,45 @@ class ClassRegisterFaceView(APIView):
             "message": "Đăng ký khuôn mặt 3D (Trung bình Vector) thành công!",
             "face_registered": True
         }, status=status.HTTP_200_OK)
+
+
+class ClassFaceValidateView(APIView):
+    """
+    Kiểm tra nhanh một ảnh chụp từ camera có chứa khuôn mặt hợp lệ hay không
+    trước khi cho phép người dùng chuyển sang bước chụp tiếp theo.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, class_id):
+        class_room = get_object_or_404(Class, id=class_id)
+
+        try:
+            ClassMember.objects.get(user=request.user, class_room=class_room)
+        except ClassMember.DoesNotExist:
+            return Response({"error": "Bạn không phải thành viên của lớp học này."}, status=status.HTTP_403_FORBIDDEN)
+
+        image = request.FILES.get('image')
+        if not image:
+            return Response({"error": "Thiếu ảnh kiểm tra khuôn mặt."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            embedding = get_embedding_from_image(image.read())
+        except RuntimeError as e:
+            return Response({
+                "error": "Hệ thống nhận diện khuôn mặt chưa sẵn sàng. Vui lòng kiểm tra lại AI backend.",
+                "details": str(e)
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        except Exception as e:
+            return Response({
+                "error": f"Lỗi xử lý ảnh khuôn mặt: {str(e)}"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        if not embedding:
+            return Response({
+                "error": "Không phát hiện khuôn mặt trong ảnh. Vui lòng đưa mặt vào khung hình và chụp lại."
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response({"message": "Ảnh hợp lệ.", "face_detected": True}, status=status.HTTP_200_OK)
 
 # -------------------------------------------------------------
 # PHẦN II: BÀI VIẾT VÀ BÌNH LUẬN
@@ -197,7 +286,7 @@ class PostListView(APIView):
         posts = Post.objects.filter(class_room=class_room).annotate(
             comment_count=Count('comments')
         ).order_by('-created_at')
-        serializer = PostSerializer(posts, many=True)
+        serializer = PostSerializer(posts, many=True, context={'request': request})
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     def post(self, request, class_id):
@@ -211,7 +300,7 @@ class PostListView(APIView):
             return Response({"error": "Nội dung bài viết (content) không được để trống."}, status=status.HTTP_400_BAD_REQUEST)
             
         post = Post.objects.create(class_room=class_room, author=request.user, content=content)
-        serializer = PostSerializer(post)
+        serializer = PostSerializer(post, context={'request': request})
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 # 7.5. Sửa & Xóa bài viết — PUT/DELETE /posts/<post_id>/
@@ -235,7 +324,7 @@ class PostDetailView(APIView):
 
         post.content = content
         post.save()
-        serializer = PostSerializer(post)
+        serializer = PostSerializer(post, context={'request': request})
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     def delete(self, request, class_id, post_id):
@@ -352,7 +441,8 @@ class DocumentUploadView(APIView):
         document = Document.objects.create(
             post=post_obj,
             file_name=file_name,
-            file_upload=uploaded_file
+            file=uploaded_file,
+            file_path=''
         )
         serializer = DocumentSerializer(document, context={'request': request})
         return Response(serializer.data, status=status.HTTP_201_CREATED)
@@ -396,7 +486,10 @@ class DocDownloadView(APIView):
         if not (is_creator or is_member):
             return Response({"error": "Bạn không có quyền tải tài liệu này."}, status=status.HTTP_403_FORBIDDEN)
 
-        file_path = document.file_upload.path
+        if not document.file:
+            return Response({"error": "Tài liệu này chưa có file đính kèm."}, status=status.HTTP_404_NOT_FOUND)
+
+        file_path = document.file.path
         if not os.path.exists(file_path):
             return Response({"error": "File không tồn tại trên server."}, status=status.HTTP_404_NOT_FOUND)
 
@@ -432,12 +525,22 @@ class AttendanceSessionCreateView(APIView):
         
         if not start_time or not end_time:
             return Response({"error": "Cần cung cấp thời gian bắt đầu (start_time) và kết thúc (end_time)."}, status=status.HTTP_400_BAD_REQUEST)
+
+        creator_ip = get_client_ip(request)
+        creator_network = get_private_network_for_ip(creator_ip)
+        if not creator_network:
+            return Response(
+                {"error": "Không thể mở phiên điểm danh vì IP của người tạo không thuộc mạng nội bộ hợp lệ."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
             
         session = AttendanceSession.objects.create(
             class_room=class_room,
             created_by=request.user,
             start_time=start_time,
-            end_time=end_time
+            end_time=end_time,
+            creator_ip=creator_ip,
+            creator_network=str(creator_network)
         )
         serializer = AttendanceSessionSerializer(session)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
@@ -468,6 +571,9 @@ class AttendanceSessionCreateView(APIView):
 
 from apps.utils import get_embedding_from_image, compare_faces
 
+import logging
+logger = logging.getLogger(__name__)
+
 class AttendanceCheckInView(APIView):
     """
     Học viên thực hiện điểm danh.
@@ -476,6 +582,8 @@ class AttendanceCheckInView(APIView):
     permission_classes = [IsAuthenticated, IsFaceRegisteredMemberOrCreator]
 
     def post(self, request, class_id, session_id):
+         # Log thông tin để debug
+        logger.info(f"Check-in attempt: user={request.user.id}, session={session_id}, ip={get_client_ip(request)}")
         class_room = get_object_or_404(Class, id=class_id)
         session = get_object_or_404(AttendanceSession, id=session_id, class_room=class_room)
         
@@ -486,15 +594,17 @@ class AttendanceCheckInView(APIView):
             
         member = get_object_or_404(ClassMember, user=request.user, class_room=class_room)
         
-        # 2. Kiểm tra IP Nội bộ (Giả lập đơn giản)
-        # Trong thực tế, đọc từ request.META.get('REMOTE_ADDR')
-        client_ip = request.META.get('REMOTE_ADDR', '127.0.0.1')
-        is_internal = client_ip.startswith('192.168.') or client_ip.startswith('10.') or client_ip == '127.0.0.1'
-        if not is_internal:
-            return Response({"error": "Từ chối truy cập. Bạn không sử dụng mạng nội bộ của trường."}, status=status.HTTP_403_FORBIDDEN)
+        # 2. Kiểm tra IP của người điểm danh có cùng mạng nội bộ với người tạo phiên hay không
+        client_ip = get_client_ip(request)
+        if not is_ip_allowed_for_session(client_ip, session):
+            return Response(
+                {"error": "Từ chối điểm danh. IP hiện tại không nằm trong cùng mạng nội bộ với người tạo phiên."},
+                status=status.HTTP_403_FORBIDDEN
+            )
 
         # 3. So khớp Vector khuôn mặt
         image_file = request.FILES.get('checkin_image')
+       
         if not image_file:
              return Response({"error": "Yêu cầu cung cấp file ảnh chụp hiện tại (checkin_image)."}, status=status.HTTP_400_BAD_REQUEST)
              
@@ -505,16 +615,82 @@ class AttendanceCheckInView(APIView):
         
         try:
             checkin_bytes = image_file.read()
+            checkin_vector = get_embedding_from_image(checkin_bytes)
+            print("==== DEBUG CHECK-IN ====")
+            print("User:", request.user.id)
+
+            if checkin_vector is None:
+                print("❌ checkin_vector = None")
+            else:
+                print("✔ checkin_vector (first 5):", checkin_vector[:5])
+            
+            if checkin_vector is None:
+                return Response({
+                    "error": "Không phát hiện khuôn mặt hoặc ảnh không hợp lệ. Vui lòng chụp rõ khuôn mặt trong điều kiện đủ sáng."
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            registered_vector = face_reg.embedding_vector
+            is_match, distance = compare_faces(checkin_vector, registered_vector, threshold=0.45)
+            print("🔥 DISTANCE:", distance)
+            print("🔥 MATCH:", is_match)
+            print("=======================")
+            print("Registered vector raw:", registered_vector)
+
+            try:
+                import json
+                import ast
+                if not isinstance(registered_vector, list):
+                    try:
+                        registered_vector = json.loads(registered_vector)
+                    except:
+                        registered_vector = ast.literal_eval(registered_vector)
+            except Exception as e:
+                print("❌ Lỗi parse vector:", str(e))
+
+            print("✔ registered_vector (first 5):", registered_vector[:5])
+                        
+        except RuntimeError as e:
+            # ❌ KHÔNG ĐƯỢC TỰ ĐỘNG PASS
+            return Response({
+                "error": "Hệ thống nhận diện khuôn mặt chưa sẵn sàng. Vui lòng liên hệ quản trị viên.",
+                "details": str(e)
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+            
+        except Exception as e:
+            return Response({
+                "error": f"Lỗi xử lý ảnh: {str(e)}"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        if not is_match:
+
+            logger.warning(f"Face mismatch: user={request.user.id}, distance={distance}")
+            return Response({
+                "error": "Nhận diện khuôn mặt thất bại! Khuôn mặt không khớp với dữ liệu đã đăng ký.",
+                "distance": float(distance),
+                "threshold": 0.45
+            }, status=status.HTTP_400_BAD_REQUEST)
+        '''
+        try:
+            checkin_bytes = image_file.read()
+            
+            checkin_vector = get_embedding_from_image(checkin_bytes)
             
             try:
                 # Thử dùng AI thật
                 checkin_vector = get_embedding_from_image(checkin_bytes)
+              
+                if checkin_vector is None:
+                    return Response({
+                        "error": "Không phát hiện khuôn mặt hoặc ảnh không hợp lệ"
+                    }, status=400)
                 
                 if not checkin_vector:
                     return Response({"error": "Không tìm thấy khuôn mặt trong ảnh."}, status=status.HTTP_400_BAD_REQUEST)
                 
                 registered_vector = face_reg.embedding_vector
                 is_match, distance = compare_faces(checkin_vector, registered_vector, threshold=0.45)
+              
+               
                 
             except RuntimeError:
                 # AI chưa cài (môi trường dev): Tự động pass thành công
@@ -529,7 +705,9 @@ class AttendanceCheckInView(APIView):
                 "error": "Nhận diện khuôn mặt thất bại (Không khớp với dữ liệu đăng ký).",
                 "distance": float(distance)
              }, status=status.HTTP_400_BAD_REQUEST)
-                 
+            ''' 
+
+        logger.info(f"Check-in success: user={request.user.id}, session={session_id}")    
         # 4. Ghi nhận điểm danh
         record, created = AttendanceRecord.objects.get_or_create(
             session=session,

@@ -111,8 +111,7 @@ class Document(models.Model):
     def file_url(self):
         """Return the file URL if file exists"""
         if self.file:
-            from django.conf import settings
-            return f"{settings.MEDIA_URL}{self.file}"
+            return self.file.url
         return self.file_path
 
 # 8. AttendanceSessions
@@ -123,6 +122,8 @@ class AttendanceSession(models.Model):
     session_token = models.CharField(max_length=255, unique=True, blank=True, verbose_name="Mã phiên/QR (session_token)")
     start_time = models.DateTimeField(verbose_name="Thời gian bắt đầu")
     end_time = models.DateTimeField(verbose_name="Thời gian kết thúc")
+    creator_ip = models.GenericIPAddressField(blank=True, null=True, verbose_name="IP người tạo")
+    creator_network = models.CharField(max_length=50, blank=True, null=True, verbose_name="Subnet mạng nội bộ")
 
     def save(self, *args, **kwargs):
         # Tự động sinh session_token ngẫu nhiên để làm link hoặc QR nếu thiếu thiết lập
