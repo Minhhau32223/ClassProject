@@ -1,0 +1,64 @@
+{
+  "dataset": "C:\\Users\\hau66\\Downloads\\vgg_face2-master\\vgg_face2-master\\samples (test set)\\loose_crop (release version)",
+  "config": {
+    "test_size": 0.3,
+    "threshold": 0.45,
+    "seed": 42
+  },
+  "dataset_overview": {
+    "num_classes": 3,
+    "num_images": 32,
+    "images_per_class": {
+      "n000106": 6,
+      "n007241": 19,
+      "n008937": 7
+    },
+    "train_images": 21,
+    "train_valid": 21,
+    "test_images": 11,
+    "invalid_images": 0
+  },
+  "metrics": {
+    "accuracy": 0.18181818181818182,
+    "macro_precision": 0.06060606060606061,
+    "macro_recall": 0.3333333333333333,
+    "macro_f1": 0.10256410256410257,
+    "total_test_samples": 11,
+    "correct_predictions": 2,
+    "per_class": {
+      "n000106": {
+        "precision": 0.18181818181818182,
+        "recall": 1.0,
+        "f1_score": 0.3076923076923077,
+        "support": 2
+      },
+      "n007241": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1_score": 0.0,
+        "support": 6
+      },
+      "n008937": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1_score": 0.0,
+        "support": 3
+      }
+    }
+  },
+  "verification": {
+    "false_rejection_rate": 0.8181818181818182,
+    "false_acceptance_rate": 0.8181818181818182
+  },
+  "gallery_classes": [
+    "n000106",
+    "n007241",
+    "n008937"
+  ],
+  "gallery_strategy": "single_reference_image_per_person",
+  "gallery_sources": {
+    "n000106": "C:\\Users\\hau66\\Downloads\\vgg_face2-master\\vgg_face2-master\\samples (test set)\\loose_crop (release version)\\n000106\\0003_01.jpg",
+    "n007241": "C:\\Users\\hau66\\Downloads\\vgg_face2-master\\vgg_face2-master\\samples (test set)\\loose_crop (release version)\\n007241\\0280_01.jpg",
+    "n008937": "C:\\Users\\hau66\\Downloads\\vgg_face2-master\\vgg_face2-master\\samples (test set)\\loose_crop (release version)\\n008937\\0004_01.jpg"
+  }
+}
