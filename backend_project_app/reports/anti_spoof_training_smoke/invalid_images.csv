@@ -1,0 +1,5 @@
+﻿path,label_name,target,valid_face,reason,processing_time_ms,brightness_mean,blur_variance,detector_confidence,relative_face_size,yaw_score
+C:\Users\hau66\Downloads\Human Faces Dataset\Real Images\000045.jpg,real,1,False,Khuôn mặt chưa rõ hoặc chưa đủ điều kiện nhận diện. Vui lòng chụp gần hơn và đủ sáng.,83.76,119.37831151427687,1062.5038657050586,,,
+C:\Users\hau66\Downloads\Human Faces Dataset\Real Images\000057.jpg,real,1,False,Khuôn mặt chưa rõ hoặc chưa đủ điều kiện nhận diện. Vui lòng chụp gần hơn và đủ sáng.,86.42,168.97492526543655,210.92084555133872,,,
+C:\Users\hau66\Downloads\Human Faces Dataset\Real Images\000094.jpg,real,1,False,Khuôn mặt chưa rõ hoặc chưa đủ điều kiện nhận diện. Vui lòng chụp gần hơn và đủ sáng.,86.35,169.39841253479022,517.4492665775228,,,
+C:\Users\hau66\Downloads\Human Faces Dataset\Real Images\000120.jpg,real,1,False,Không phát hiện khuôn mặt trong ảnh. Vui lòng đưa mặt vào giữa khung hình.,126.87,166.44137202350274,43.49741603657642,,,

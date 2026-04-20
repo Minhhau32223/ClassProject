@@ -1,11 +1,13 @@
 import json
 import ipaddress
+import uuid
 
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.shortcuts import get_object_or_404
+from django.core import signing
 # from apps.utils import is_live_image
 
 from apps.models import Class, ClassMember
@@ -147,7 +149,15 @@ class ClassMembersView(APIView):
         serializer = ClassMemberSerializer(members, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
-from apps.utils import get_embedding_from_image
+from apps.face_runtime import (
+    DEFAULT_FACE_MATCH_THRESHOLD,
+    DEFAULT_FACE_MATCH_MARGIN,
+    cosine_distance_between,
+    get_embedding_from_image,
+    get_average_embedding,
+    registration_embeddings_are_consistent,
+    validate_face_image,
+)
 
 # 6. API Đăng ký khuôn mặt
 ''''''
@@ -178,21 +188,43 @@ class ClassRegisterFaceView(APIView):
             return Response({"error": "Yêu cầu cung cấp đủ 3 file ảnh khuôn mặt (Front, Left, Right)."}, status=status.HTTP_400_BAD_REQUEST)
             
         try:
-            from apps.utils import get_embedding_from_image, get_average_embedding
-            
             try:
                 # Lấy vector đặc trưng 512D từ 3 file ảnh bằng MTCNN + FaceNet
-                emb_front = get_embedding_from_image(image_front.read())
+                emb_front, front_error, front_meta = validate_face_image(image_front.read())
                 if not emb_front:
-                    return Response({"error": "Không tìm thấy khuôn mặt trong ảnh Trực diện."}, status=status.HTTP_400_BAD_REQUEST)
+                    return Response(
+                        {"error": front_error or "Không tìm thấy khuôn mặt trong ảnh Trực diện.", "meta": front_meta},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
 
-                emb_left = get_embedding_from_image(image_left.read())
+                emb_left, left_error, left_meta = validate_face_image(image_left.read())
                 if not emb_left:
-                    return Response({"error": "Không tìm thấy khuôn mặt trong ảnh góc Trái."}, status=status.HTTP_400_BAD_REQUEST)
+                    return Response(
+                        {"error": left_error or "Không tìm thấy khuôn mặt trong ảnh góc Trái.", "meta": left_meta},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
 
-                emb_right = get_embedding_from_image(image_right.read())
+                emb_right, right_error, right_meta = validate_face_image(image_right.read())
                 if not emb_right:
-                    return Response({"error": "Không tìm thấy khuôn mặt trong ảnh góc Phải."}, status=status.HTTP_400_BAD_REQUEST)
+                    return Response(
+                        {"error": right_error or "Không tìm thấy khuôn mặt trong ảnh góc Phải.", "meta": right_meta},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
+                is_consistent, worst_distance = registration_embeddings_are_consistent(
+                    [emb_front, emb_left, emb_right]
+                )
+                if not is_consistent:
+                    return Response(
+                        {
+                            "error": (
+                                "Ba ảnh đăng ký chưa đủ nhất quán để tạo mẫu khuôn mặt. "
+                                "Vui lòng chụp lại rõ mặt, đúng cùng một người và đủ ánh sáng."
+                            ),
+                            "worst_distance": float(worst_distance),
+                        },
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
 
                 # Tổng hợp 3 vector thành 1
                 embedding_vector = get_average_embedding([emb_front, emb_left, emb_right])
@@ -245,7 +277,7 @@ class ClassFaceValidateView(APIView):
             return Response({"error": "Thiếu ảnh kiểm tra khuôn mặt."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            embedding = get_embedding_from_image(image.read())
+            embedding, error_message, diagnostics = validate_face_image(image.read())
         except RuntimeError as e:
             return Response({
                 "error": "Hệ thống nhận diện khuôn mặt chưa sẵn sàng. Vui lòng kiểm tra lại AI backend.",
@@ -258,7 +290,8 @@ class ClassFaceValidateView(APIView):
 
         if not embedding:
             return Response({
-                "error": "Không phát hiện khuôn mặt trong ảnh. Vui lòng đưa mặt vào khung hình và chụp lại."
+                "error": error_message or "Không phát hiện khuôn mặt trong ảnh. Vui lòng đưa mặt vào khung hình và chụp lại.",
+                "meta": diagnostics,
             }, status=status.HTTP_400_BAD_REQUEST)
 
         return Response({"message": "Ảnh hợp lệ.", "face_detected": True}, status=status.HTTP_200_OK)
@@ -569,10 +602,174 @@ class AttendanceSessionCreateView(APIView):
         serializer = AttendanceSessionSerializer(sessions, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
-from apps.utils import get_embedding_from_image, compare_faces
-
 import logging
 logger = logging.getLogger(__name__)
+
+
+CHECKIN_CHALLENGE_MAX_AGE_SECONDS = 120
+CHECKIN_REQUIRED_FRAME_COUNT = 3
+CHECKIN_POSE_SEQUENCE = ["front", "left", "right"]
+
+
+def build_checkin_challenge_token(*, class_id, session_id, user_id):
+    payload = {
+        "class_id": class_id,
+        "session_id": session_id,
+        "user_id": user_id,
+        "steps": CHECKIN_POSE_SEQUENCE,
+        "nonce": uuid.uuid4().hex,
+    }
+    return signing.dumps(payload)
+
+
+def load_checkin_challenge_token(token, *, class_id, session_id, user_id):
+    payload = signing.loads(token, max_age=CHECKIN_CHALLENGE_MAX_AGE_SECONDS)
+    if (
+        payload.get("class_id") != class_id
+        or payload.get("session_id") != session_id
+        or payload.get("user_id") != user_id
+    ):
+        raise signing.BadSignature("Challenge token mismatch")
+    return payload
+
+
+def pose_matches(expected_pose, detected_pose):
+    if expected_pose == "front":
+        return detected_pose in {"front", "left", "right"}
+    if detected_pose == expected_pose:
+        return True
+    # Cho phep xoay chua hoan hao nhung da nghieng dung huong
+    return False
+
+
+def evaluate_checkin_frames(image_files, expected_steps):
+    frame_results = []
+    embeddings = []
+
+    if len(image_files) != len(expected_steps):
+        return None, None, None, {
+            "error": f"Cần đúng {len(expected_steps)} ảnh cho thử thách điểm danh.",
+        }
+
+    for index, (image_file, expected_pose) in enumerate(zip(image_files, expected_steps), start=1):
+        embedding, error_message, diagnostics = validate_face_image(image_file.read())
+        diagnostics = diagnostics or {}
+        detected_pose = diagnostics.get("pose_label", "unknown")
+
+        if embedding is None:
+            return None, None, None, {
+                "error": error_message or f"Frame {index} không hợp lệ.",
+                "step": index,
+                "expected_pose": expected_pose,
+                "detected_pose": detected_pose,
+                "meta": diagnostics,
+            }
+
+        if not pose_matches(expected_pose, detected_pose):
+            return None, None, None, {
+                "error": (
+                    f"Frame {index} chưa đúng động tác liveness yêu cầu. "
+                    f"Cần tư thế '{expected_pose}' nhưng hệ thống nhận '{detected_pose}'."
+                ),
+                "step": index,
+                "expected_pose": expected_pose,
+                "detected_pose": detected_pose,
+                "meta": diagnostics,
+            }
+
+        embeddings.append(embedding)
+        frame_results.append(
+            {
+                "step": index,
+                "expected_pose": expected_pose,
+                "detected_pose": detected_pose,
+                "yaw_score": diagnostics.get("yaw_score"),
+                "face_confidence": diagnostics.get("face_confidence"),
+            }
+        )
+
+    average_embedding = get_average_embedding(embeddings)
+    if not average_embedding:
+        return None, None, None, {
+            "error": "Không tổng hợp được vector khuôn mặt từ chuỗi frame điểm danh.",
+        }
+
+    return average_embedding, embeddings, frame_results, None
+
+
+def find_best_face_match_for_member(class_room, member, probe_embedding):
+    registrations = (
+        FaceRegistration.objects
+        .filter(class_member__class_room=class_room, class_member__face_registered=True)
+        .select_related("class_member__user")
+    )
+
+    candidates = []
+    for registration in registrations:
+        distance = cosine_distance_between(probe_embedding, registration.embedding_vector)
+        candidates.append(
+            {
+                "class_member_id": registration.class_member_id,
+                "username": registration.class_member.user.username,
+                "distance": float(distance),
+            }
+        )
+
+    if not candidates:
+        raise FaceRegistration.DoesNotExist("Không có dữ liệu khuôn mặt nào trong lớp.")
+
+    candidates.sort(key=lambda item: item["distance"])
+    best_match = candidates[0]
+    second_best = candidates[1] if len(candidates) > 1 else None
+    margin = (
+        float(second_best["distance"] - best_match["distance"])
+        if second_best is not None else None
+    )
+    is_identity_match = best_match["class_member_id"] == member.id
+    passes_threshold = best_match["distance"] < DEFAULT_FACE_MATCH_THRESHOLD
+    passes_margin = second_best is None or margin >= DEFAULT_FACE_MATCH_MARGIN
+
+    return {
+        "best_match": best_match,
+        "second_best": second_best,
+        "margin": margin,
+        "passes_threshold": passes_threshold,
+        "passes_margin": passes_margin,
+        "is_identity_match": is_identity_match,
+        "candidates": candidates[:5],
+    }
+
+
+class AttendanceCheckInChallengeView(APIView):
+    permission_classes = [IsAuthenticated, IsFaceRegisteredMemberOrCreator]
+
+    def get(self, request, class_id, session_id):
+        class_room = get_object_or_404(Class, id=class_id)
+        session = get_object_or_404(AttendanceSession, id=session_id, class_room=class_room)
+        member = get_object_or_404(ClassMember, user=request.user, class_room=class_room)
+        get_object_or_404(FaceRegistration, class_member=member)
+
+        now = timezone.now()
+        if now < session.start_time or now > session.end_time:
+            return Response(
+                {"error": "Phiên điểm danh hiện không khả dụng (Chưa mở hoặc đã đóng)."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        token = build_checkin_challenge_token(
+            class_id=class_room.id,
+            session_id=session.id,
+            user_id=request.user.id,
+        )
+        return Response(
+            {
+                "challenge_token": token,
+                "steps": CHECKIN_POSE_SEQUENCE,
+                "required_frames": CHECKIN_REQUIRED_FRAME_COUNT,
+                "expires_in_seconds": CHECKIN_CHALLENGE_MAX_AGE_SECONDS,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 class AttendanceCheckInView(APIView):
     """
@@ -602,112 +799,111 @@ class AttendanceCheckInView(APIView):
                 status=status.HTTP_403_FORBIDDEN
             )
 
-        # 3. So khớp Vector khuôn mặt
-        image_file = request.FILES.get('checkin_image')
-       
-        if not image_file:
-             return Response({"error": "Yêu cầu cung cấp file ảnh chụp hiện tại (checkin_image)."}, status=status.HTTP_400_BAD_REQUEST)
-             
-        face_reg = get_object_or_404(FaceRegistration, class_member=member)
-        
-        is_match = False
-        distance = 0.0  # Giá trị mặc định an toàn
-        
+        challenge_token = request.data.get("challenge_token")
+        if not challenge_token:
+            return Response(
+                {"error": "Thiếu challenge_token cho phiên điểm danh."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         try:
-            checkin_bytes = image_file.read()
-            checkin_vector = get_embedding_from_image(checkin_bytes)
-            print("==== DEBUG CHECK-IN ====")
-            print("User:", request.user.id)
+            challenge_payload = load_checkin_challenge_token(
+                challenge_token,
+                class_id=class_room.id,
+                session_id=session.id,
+                user_id=request.user.id,
+            )
+        except signing.SignatureExpired:
+            return Response(
+                {"error": "Thử thách liveness đã hết hạn. Vui lòng mở lại camera để lấy thử thách mới."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except signing.BadSignature:
+            return Response(
+                {"error": "challenge_token không hợp lệ."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-            if checkin_vector is None:
-                print("❌ checkin_vector = None")
-            else:
-                print("✔ checkin_vector (first 5):", checkin_vector[:5])
-            
-            if checkin_vector is None:
-                return Response({
-                    "error": "Không phát hiện khuôn mặt hoặc ảnh không hợp lệ. Vui lòng chụp rõ khuôn mặt trong điều kiện đủ sáng."
-                }, status=status.HTTP_400_BAD_REQUEST)
-            
-            registered_vector = face_reg.embedding_vector
-            is_match, distance = compare_faces(checkin_vector, registered_vector, threshold=0.45)
-            print("🔥 DISTANCE:", distance)
-            print("🔥 MATCH:", is_match)
-            print("=======================")
-            print("Registered vector raw:", registered_vector)
+        image_files = request.FILES.getlist("checkin_images")
+        if not image_files:
+            return Response(
+                {"error": "Yêu cầu cung cấp 5 ảnh điểm danh (checkin_images)."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-            try:
-                import json
-                import ast
-                if not isinstance(registered_vector, list):
-                    try:
-                        registered_vector = json.loads(registered_vector)
-                    except:
-                        registered_vector = ast.literal_eval(registered_vector)
-            except Exception as e:
-                print("❌ Lỗi parse vector:", str(e))
+        get_object_or_404(FaceRegistration, class_member=member)
 
-            print("✔ registered_vector (first 5):", registered_vector[:5])
-                        
+        try:
+            checkin_vector, _, frame_results, frame_error = evaluate_checkin_frames(
+                image_files=image_files,
+                expected_steps=challenge_payload.get("steps", CHECKIN_POSE_SEQUENCE),
+            )
         except RuntimeError as e:
-            # ❌ KHÔNG ĐƯỢC TỰ ĐỘNG PASS
             return Response({
                 "error": "Hệ thống nhận diện khuôn mặt chưa sẵn sàng. Vui lòng liên hệ quản trị viên.",
                 "details": str(e)
             }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
-            
         except Exception as e:
             return Response({
-                "error": f"Lỗi xử lý ảnh: {str(e)}"
+                "error": f"Lỗi xử lý chuỗi ảnh điểm danh: {str(e)}"
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
-        if not is_match:
 
-            logger.warning(f"Face mismatch: user={request.user.id}, distance={distance}")
-            return Response({
-                "error": "Nhận diện khuôn mặt thất bại! Khuôn mặt không khớp với dữ liệu đã đăng ký.",
-                "distance": float(distance),
-                "threshold": 0.45
-            }, status=status.HTTP_400_BAD_REQUEST)
-        '''
-        try:
-            checkin_bytes = image_file.read()
-            
-            checkin_vector = get_embedding_from_image(checkin_bytes)
-            
-            try:
-                # Thử dùng AI thật
-                checkin_vector = get_embedding_from_image(checkin_bytes)
-              
-                if checkin_vector is None:
-                    return Response({
-                        "error": "Không phát hiện khuôn mặt hoặc ảnh không hợp lệ"
-                    }, status=400)
-                
-                if not checkin_vector:
-                    return Response({"error": "Không tìm thấy khuôn mặt trong ảnh."}, status=status.HTTP_400_BAD_REQUEST)
-                
-                registered_vector = face_reg.embedding_vector
-                is_match, distance = compare_faces(checkin_vector, registered_vector, threshold=0.45)
-              
-               
-                
-            except RuntimeError:
-                # AI chưa cài (môi trường dev): Tự động pass thành công
-                is_match = True
-                distance = 0.1
-                
-        except Exception as e:
-            return Response({"error": f"Lỗi xử lý ảnh: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
-        if not is_match:
-            return Response({
-                "error": "Nhận diện khuôn mặt thất bại (Không khớp với dữ liệu đăng ký).",
-                "distance": float(distance)
-             }, status=status.HTTP_400_BAD_REQUEST)
-            ''' 
+        if frame_error:
+            return Response(frame_error, status=status.HTTP_400_BAD_REQUEST)
 
-        logger.info(f"Check-in success: user={request.user.id}, session={session_id}")    
+        match_result = find_best_face_match_for_member(class_room, member, checkin_vector)
+        best_match = match_result["best_match"]
+        second_best = match_result["second_best"]
+        margin = match_result["margin"]
+
+        logger.info(
+            "Check-in compare: user=%s best=%s best_distance=%.4f second=%s margin=%s threshold=%.2f margin_threshold=%.2f frames=%s",
+            request.user.id,
+            best_match["username"],
+            best_match["distance"],
+            second_best["username"] if second_best else None,
+            f"{margin:.4f}" if margin is not None else None,
+            DEFAULT_FACE_MATCH_THRESHOLD,
+            DEFAULT_FACE_MATCH_MARGIN,
+            frame_results,
+        )
+
+        if not match_result["passes_threshold"]:
+            return Response(
+                {
+                    "error": "Khuôn mặt không khớp với dữ liệu đã đăng ký.",
+                    "best_distance": best_match["distance"],
+                    "threshold": DEFAULT_FACE_MATCH_THRESHOLD,
+                    "frame_results": frame_results,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not match_result["is_identity_match"]:
+            return Response(
+                {
+                    "error": "Khuôn mặt không khớp với dữ liệu đã đăng ký.",
+                    "best_match_username": best_match["username"],
+                    "best_distance": best_match["distance"],
+                    "frame_results": frame_results,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not match_result["passes_margin"]:
+            return Response(
+                {
+                    "error": "Khuôn mặt không khớp với dữ liệu đã đăng ký.",
+                    "best_distance": best_match["distance"],
+                    "second_best_distance": second_best["distance"] if second_best else None,
+                    "margin": margin,
+                    "required_margin": DEFAULT_FACE_MATCH_MARGIN,
+                    "frame_results": frame_results,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        logger.info(f"Check-in success: user={request.user.id}, session={session_id}")
         # 4. Ghi nhận điểm danh
         record, created = AttendanceRecord.objects.get_or_create(
             session=session,
@@ -721,7 +917,10 @@ class AttendanceCheckInView(APIView):
         serializer = AttendanceRecordSerializer(record)
         return Response({
             "message": "Điểm danh (Xác thực AI) thành công!",
-            "distance": float(distance),
+            "best_distance": float(best_match["distance"]),
+            "second_best_distance": float(second_best["distance"]) if second_best else None,
+            "margin": float(margin) if margin is not None else None,
+            "frame_results": frame_results,
             "record": serializer.data
         }, status=status.HTTP_201_CREATED)
 from rest_framework import status

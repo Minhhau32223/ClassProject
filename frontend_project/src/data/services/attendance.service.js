@@ -14,6 +14,10 @@ const attendanceService = {
     getActiveSessions: (classId) =>
         axiosClient.get(`/classes/${classId}/attendance/sessions/?active=true`),
 
+    // Lấy challenge liveness trước khi gửi chuỗi frame điểm danh
+    getCheckInChallenge: (classId, sessionId) =>
+        axiosClient.get(`/classes/${classId}/attendance/sessions/${sessionId}/challenge/`),
+
     // Học viên check-in bằng ảnh khuôn mặt
     checkIn: (classId, sessionId, formData) =>
         axiosClient.post(`/classes/${classId}/attendance/sessions/${sessionId}/checkin/`, formData),

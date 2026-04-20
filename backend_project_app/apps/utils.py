@@ -190,6 +190,12 @@ except ImportError as e:
     cv2 = None
     np = None
     cosine = None
+
+FACE_DETECTION_MIN_CONFIDENCE = 0.95
+FACE_MIN_SIZE_PX = 90
+FACE_MIN_RELATIVE_SIZE = 0.18
+DEFAULT_FACE_MATCH_THRESHOLD = 0.32
+REGISTRATION_MAX_INTRA_DISTANCE = 0.35
     """
 def get_embedding_from_image(image_bytes):
     
@@ -370,6 +376,27 @@ def l2_normalize(x):
         return x
     return x / norm
 
+
+def cosine_distance_between(vector1, vector2):
+    import json
+    import ast
+
+    if not isinstance(vector1, list):
+        try:
+            vector1 = json.loads(vector1)
+        except Exception:
+            vector1 = ast.literal_eval(vector1)
+
+    if not isinstance(vector2, list):
+        try:
+            vector2 = json.loads(vector2)
+        except Exception:
+            vector2 = ast.literal_eval(vector2)
+
+    v1 = l2_normalize(np.array(vector1))
+    v2 = l2_normalize(np.array(vector2))
+    return float(cosine(v1, v2))
+
 def get_embedding_from_image(image_bytes):
     if detector is None or embedder is None:
         raise RuntimeError("AI Models not initialized")
@@ -387,12 +414,23 @@ def get_embedding_from_image(image_bytes):
     if not results:
         return None
 
-    # lọc face có confidence > 0.9
-    results = [f for f in results if f['confidence'] > 0.9]
+    # Siết lại điều kiện phát hiện để giảm nhận nhầm
+    results = [f for f in results if f['confidence'] >= FACE_DETECTION_MIN_CONFIDENCE]
     if not results:
         return None
 
     best_face = max(results, key=lambda f: f['confidence'])
+    x, y, w, h = best_face['box']
+
+    if w <= 0 or h <= 0:
+        return None
+
+    image_height, image_width = img_rgb.shape[:2]
+    if w < FACE_MIN_SIZE_PX or h < FACE_MIN_SIZE_PX:
+        return None
+
+    if (w / image_width) < FACE_MIN_RELATIVE_SIZE or (h / image_height) < FACE_MIN_RELATIVE_SIZE:
+        return None
 
     face = preprocess_face(img_rgb, best_face['box'])
     if face is None:
@@ -407,29 +445,10 @@ def get_embedding_from_image(image_bytes):
 
     return embedding.tolist()
 
-def compare_faces(vector1, vector2, threshold=0.5):
-    import json, ast
-
-    if not isinstance(vector1, list):
-        try:
-            vector1 = json.loads(vector1)
-        except:
-            vector1 = ast.literal_eval(vector1)
-
-    if not isinstance(vector2, list):
-        try:
-            vector2 = json.loads(vector2)
-        except:
-            vector2 = ast.literal_eval(vector2)
-
-    v1 = l2_normalize(np.array(vector1))
-    v2 = l2_normalize(np.array(vector2))
-
-    distance = cosine(v1, v2)
-
+def compare_faces(vector1, vector2, threshold=DEFAULT_FACE_MATCH_THRESHOLD):
+    distance = cosine_distance_between(vector1, vector2)
     is_match = distance < threshold
-
-    return is_match, float(distance)
+    return is_match, distance
 
 def get_average_embedding(vector_list):
     if not vector_list:
@@ -440,3 +459,16 @@ def get_average_embedding(vector_list):
     mean_vec = np.mean(arr, axis=0)
 
     return l2_normalize(mean_vec).tolist()
+
+
+def registration_embeddings_are_consistent(embeddings, max_distance=REGISTRATION_MAX_INTRA_DISTANCE):
+    if len(embeddings) < 2:
+        return True, 0.0
+
+    distances = []
+    for i in range(len(embeddings)):
+        for j in range(i + 1, len(embeddings)):
+            distances.append(cosine_distance_between(embeddings[i], embeddings[j]))
+
+    worst_distance = max(distances) if distances else 0.0
+    return worst_distance <= max_distance, worst_distance

@@ -199,6 +199,9 @@ export default function ClassDetailPage({ cls, onBack, username }) {
     const [checkInSession, setCheckInSession] = useState(null); // Phiên đang check-in
     const [scanStatus, setScanStatus] = useState('idle'); // idle | scanning | success | error
     const [scanMessage, setScanMessage] = useState('');
+    const [checkInChallenge, setCheckInChallenge] = useState(null);
+    const [challengeStepIndex, setChallengeStepIndex] = useState(0);
+    const [capturedFrames, setCapturedFrames] = useState([]);
     const scanIntervalRef = useRef(null);
     const scanStartupTimeoutRef = useRef(null);
     const checkInWebcamRef = useRef(null);
@@ -244,6 +247,64 @@ export default function ClassDetailPage({ cls, onBack, username }) {
         }
 
         setNotice({ type, title, message });
+    };
+
+    const buildFriendlyFaceMessage = (payload, fallbackMessage) => {
+        const rawError = payload?.error || '';
+        const meta = payload?.meta || {};
+        const detectedPose = payload?.detected_pose;
+        const expectedPose = payload?.expected_pose;
+
+        if (expectedPose && detectedPose) {
+            const poseMap = {
+                front: 'nhìn thẳng',
+                left: 'quay mặt sang trái',
+                right: 'quay mặt sang phải',
+                unknown: 'chưa xác định',
+            };
+            return `Bạn cần ${poseMap[expectedPose] || expectedPose}, nhưng hệ thống đang nhận là ${poseMap[detectedPose] || detectedPose}. Hãy giữ đầu ổn định thêm một chút rồi thử lại.`;
+        }
+
+        if (rawError.includes('mờ') || (meta.laplacian_variance !== undefined && meta.laplacian_variance < 20)) {
+            return 'Ảnh đang bị mờ. Hãy giữ điện thoại hoặc laptop đứng yên khoảng 1-2 giây và đưa mặt gần camera hơn.';
+        }
+
+        if (rawError.includes('tối') || (meta.brightness_mean !== undefined && meta.brightness_mean < 55)) {
+            return 'Ảnh đang hơi tối. Hãy xoay ra chỗ sáng hơn hoặc tăng đèn trước mặt rồi thử lại.';
+        }
+
+        if (rawError.includes('cháy')) {
+            return 'Ảnh đang bị chói sáng. Hãy tránh đèn rọi trực tiếp vào mặt hoặc đổi góc ngồi.';
+        }
+
+        if (rawError.includes('quá nhỏ') || rawError.includes('diện tích')) {
+            return 'Khuôn mặt đang ở quá xa camera. Hãy tiến gần thêm một chút để mặt nằm gọn trong khung tròn.';
+        }
+
+        if (rawError.includes('không phát hiện') || rawError.includes('khuôn mặt')) {
+            return 'Hệ thống chưa thấy rõ khuôn mặt. Hãy đưa mặt vào giữa khung, nhìn thẳng và giữ yên một chút.';
+        }
+
+        if (rawError.includes('không khớp với dữ liệu đã đăng ký') || rawError.includes('Khuôn mặt không khớp')) {
+            return 'Khuôn mặt hiện tại không khớp với dữ liệu đã đăng ký của tài khoản này.';
+        }
+
+        return fallbackMessage || rawError || 'Hệ thống chưa nhận diện ổn định. Hãy giữ mặt rõ hơn và thử lại.';
+    };
+
+    const buildFriendlyRuntimeMessage = (payload, fallbackMessage) => {
+        const rawError = payload?.error || '';
+        const meta = payload?.meta || {};
+
+        if (
+            rawError.toLowerCase().includes('ảnh giả')
+            || rawError.toLowerCase().includes('không phải khuôn mặt thật')
+            || meta.anti_spoof_label === 'fake'
+        ) {
+            return 'Hệ thống phát hiện đây không phải khuôn mặt thật trực tiếp trước camera. Hãy dùng khuôn mặt thật của bạn và không dùng ảnh, video hoặc màn hình khác.';
+        }
+
+        return buildFriendlyFaceMessage(payload, fallbackMessage);
     };
 
     const closeNotice = () => setNotice(null);
@@ -298,6 +359,43 @@ export default function ClassDetailPage({ cls, onBack, username }) {
         3: "Từ từ xoay nhẹ mặt sang PHẢI"
     };
 
+    const challengeInstructions = {
+        front: 'Nhìn thẳng vào camera',
+        left: 'Xoay nhẹ đầu sang trái',
+        right: 'Xoay nhẹ đầu sang phải',
+    };
+    const CHECKIN_CAMERA_STARTUP_MS = 2200;
+    const CHECKIN_STEP_CAPTURE_DELAY_MS = 2600;
+    const cameraShellStyle = {
+        width: '100%',
+        maxWidth: 640,
+        aspectRatio: '4/3',
+        margin: '0 auto 20px',
+        background: 'radial-gradient(circle at top, #1e293b 0%, #020617 100%)',
+        borderRadius: 20,
+        overflow: 'hidden',
+        position: 'relative',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+    };
+    const circleViewportStyle = {
+        width: '72%',
+        maxWidth: 340,
+        aspectRatio: '1 / 1',
+        borderRadius: '50%',
+        overflow: 'hidden',
+        position: 'relative',
+        background: '#020617',
+        boxShadow: '0 0 0 9999px rgba(2, 6, 23, 0.82), 0 0 0 6px rgba(255,255,255,0.18)',
+    };
+    const webcamCircleStyle = {
+        width: '100%',
+        height: '100%',
+        objectFit: 'cover',
+        transform: 'scaleX(-1)',
+    };
+
     const handleCaptureFace = async () => {
         if (!webcamRef.current) {
             showNotice('error', 'Không mở được camera', 'Camera đăng ký khuôn mặt chưa sẵn sàng. Vui lòng thử mở lại.', { closeFaceModal: true });
@@ -332,7 +430,7 @@ export default function ClassDetailPage({ cls, onBack, username }) {
             showNotice(
                 'error',
                 'Ảnh chụp chưa hợp lệ',
-                e.response?.data?.error || 'Ảnh từ camera không hợp lệ hoặc không thấy khuôn mặt. Vui lòng chụp lại.',
+                buildFriendlyRuntimeMessage(e.response?.data, 'Ảnh từ camera không hợp lệ hoặc không thấy khuôn mặt. Vui lòng chụp lại.'),
                 { closeFaceModal: true }
             );
         }
@@ -357,7 +455,7 @@ export default function ClassDetailPage({ cls, onBack, username }) {
             showNotice('success', 'Đăng ký thành công', 'Khuôn mặt 3 góc độ đã được xác minh thành công.');
             postService.list(cls.id).then(r => setPosts(r.data)); // reload list
         } catch(e) {
-            const errorMessage = e.response?.data?.error || 'Lỗi đăng ký khuôn mặt.';
+            const errorMessage = buildFriendlyRuntimeMessage(e.response?.data, 'Lỗi đăng ký khuôn mặt.');
             showNotice('error', 'Đăng ký khuôn mặt thất bại', errorMessage, { closeFaceModal: true });
             // Reset cho người dùng chụp lại
             resetFaceRegistrationState();
@@ -395,95 +493,106 @@ export default function ClassDetailPage({ cls, onBack, username }) {
         setCheckInSession(session);
         setShowCheckInModal(true);
         setScanStatus('scanning');
-        setScanMessage('Đang khởi động camera...');
+        setScanMessage('Đang khởi tạo thử thách liveness...');
+        setCheckInChallenge(null);
+        setChallengeStepIndex(0);
+        setCapturedFrames([]);
 
-        // Delay 2s để Webcam component mount và camera stream sẵn sàng
-        scanStartupTimeoutRef.current = setTimeout(() => {
+        attendanceService.getCheckInChallenge(cls.id, session.id)
+            .then((response) => {
+                const challenge = response.data;
+                setCheckInChallenge(challenge);
+                setScanMessage('Đang khởi động camera...');
+
+                scanStartupTimeoutRef.current = setTimeout(() => {
+                    if (!checkInWebcamRef.current) {
+                        stopAutoScan();
+                        setScanStatus('error');
+                        setScanMessage('Camera điểm danh chưa sẵn sàng. Vui lòng mở lại và thử lại.');
+                        showNotice('error', 'Không mở được camera điểm danh', 'Camera điểm danh chưa sẵn sàng. Vui lòng thử lại.', { closeCheckInModal: true });
+                        return;
+                    }
+
+                    runCheckInSequence(session, challenge, 0, []);
+                }, CHECKIN_CAMERA_STARTUP_MS);
+            })
+            .catch((err) => {
+                const errMsg = buildFriendlyRuntimeMessage(err.response?.data, 'Không lấy được thử thách điểm danh.');
+                showNotice('error', 'Không thể bắt đầu điểm danh', errMsg, { closeCheckInModal: true });
+            });
+    };
+
+    const runCheckInSequence = (session, challenge, stepIndex, framesSoFar) => {
+        const expectedPose = challenge.steps?.[stepIndex];
+        if (!expectedPose) {
+            submitCheckInSequence(session, challenge, framesSoFar);
+            return;
+        }
+
+        setChallengeStepIndex(stepIndex);
+        setCapturedFrames(framesSoFar);
+        setScanMessage(`Bước ${stepIndex + 1}/${challenge.steps.length}: ${challengeInstructions[expectedPose] || 'Làm theo hướng dẫn trên màn hình'}...`);
+
+        scanIntervalRef.current = setTimeout(async () => {
             if (!checkInWebcamRef.current) {
-                stopAutoScan();
-                setScanStatus('error');
-                setScanMessage('Camera điểm danh chưa sẵn sàng. Vui lòng mở lại và thử lại.');
-                showNotice('error', 'Không mở được camera điểm danh', 'Camera điểm danh chưa sẵn sàng. Vui lòng thử lại.', { closeCheckInModal: true });
+                showNotice('error', 'Camera đã bị ngắt', 'Camera điểm danh không còn sẵn sàng. Vui lòng mở lại và thử lại.', { closeCheckInModal: true });
                 return;
             }
 
-            setScanMessage('Đang quét khuôn mặt - hướng mặt thẳng vào camera...');
-            let retryCount = 0;
+            const imageSrc = checkInWebcamRef.current.getScreenshot();
+            if (!imageSrc) {
+                showNotice('error', 'Chưa nhận được ảnh khuôn mặt', 'Hệ thống chưa lấy được ảnh từ camera. Vui lòng mở lại camera và thử lại.', { closeCheckInModal: true });
+                return;
+            }
 
-            scanIntervalRef.current = setInterval(async () => {
-                // Kiểm tra webcam ref tồn tại
-                if (!checkInWebcamRef.current) return;
+            try {
+                const res = await fetch(imageSrc);
+                const blob = await res.blob();
+                const nextFrames = [...framesSoFar, blob];
+                runCheckInSequence(session, challenge, stepIndex + 1, nextFrames);
+            } catch (e) {
+                showNotice('error', 'Không xử lý được ảnh camera', 'Ảnh từ camera không hợp lệ. Vui lòng thử lại.', { closeCheckInModal: true });
+            }
+        }, CHECKIN_STEP_CAPTURE_DELAY_MS);
+    };
 
-                const imageSrc = checkInWebcamRef.current.getScreenshot();
-                if (!imageSrc) {
-                    stopAutoScan();
-                    setScanStatus('error');
-                    setScanMessage('Không lấy được hình ảnh từ camera để điểm danh.');
-                    showNotice('error', 'Chưa nhận được ảnh khuôn mặt', 'Hệ thống chưa lấy được ảnh từ camera. Vui lòng mở lại camera và thử lại.', { closeCheckInModal: true });
-                    return;
-                }
+    const submitCheckInSequence = async (session, challenge, frames) => {
+        try {
+            setCapturedFrames(frames);
+            setScanMessage(`Đang gửi ${frames.length} frame lên hệ thống để xác minh...`);
 
-                retryCount++;
-                setScanMessage(`Quét lần ${retryCount}... Giữ nguyên mặt vào camera.`);
+            const formData = new FormData();
+            formData.append('challenge_token', challenge.challenge_token);
+            frames.forEach((frame, index) => {
+                formData.append('checkin_images', frame, `checkin-${index + 1}.jpg`);
+            });
 
-                try {
-                    const res = await fetch(imageSrc);
-                    const blob = await res.blob();
-                    const formData = new FormData();
-                    formData.append('checkin_image', blob, 'checkin.jpg');
+            const result = await attendanceService.checkIn(cls.id, session.id, formData);
+            stopAutoScan();
+            setScanStatus('success');
+            if (result.data?.already_checked) {
+                setScanMessage('Đã ghi nhận điểm danh trước đó.');
+            } else {
+                setScanMessage(result.data?.message || 'Điểm danh thành công!');
+            }
+        } catch (err) {
+            const httpStatus = err.response?.status;
+            const errMsg = err.response?.data?.error || '';
 
-                    const result = await attendanceService.checkIn(cls.id, session.id, formData);
-
-                    // --- Xử LÝ THÀNH CÔNG (status 200 hoặc 201) ---
-                    // (axios không throw error với 2xx)
-                    stopAutoScan();
-                    setScanStatus('success');
-                    if (result.data?.already_checked) {
-                        setScanMessage('Đã ghi nhận điểm danh trước đó.');
-                    } else {
-                        setScanMessage(result.data?.message || 'Điểm danh thành công! ✅');
-                    }
-
-                } catch (err) {
-                    const httpStatus = err.response?.status;
-                    const errMsg = err.response?.data?.error || '';
-
-                    if (httpStatus === 400 && errMsg.includes('không khả dụng')) {
-                        // Phiên đã hết giờ
-                        stopAutoScan();
-                        setScanStatus('error');
-                        setScanMessage('Phiên điểm danh đã kết thúc.');
-                        showNotice('error', 'Phiên điểm danh đã đóng', 'Phiên điểm danh hiện không còn khả dụng.', { closeCheckInModal: true });
-                    } else if (httpStatus === 403) {
-                        // Lỗi mạng / IP
-                        stopAutoScan();
-                        setScanStatus('error');
-                        setScanMessage(errMsg || 'Không có quyền điểm danh.');
-                        showNotice('error', 'Không thể điểm danh', errMsg || 'Không có quyền điểm danh.', { closeCheckInModal: true });
-                    } else if (httpStatus === 404) {
-                        stopAutoScan();
-                        setScanStatus('error');
-                        setScanMessage('Bạn chưa có dữ liệu khuôn mặt đã đăng ký.');
-                        showNotice('error', 'Chưa đăng ký khuôn mặt', 'Bạn chưa có dữ liệu khuôn mặt để điểm danh. Hãy đăng ký khuôn mặt trước.', { closeCheckInModal: true });
-                    } else if (httpStatus === 503) {
-                        stopAutoScan();
-                        setScanStatus('error');
-                        setScanMessage(errMsg || 'Hệ thống nhận diện khuôn mặt chưa sẵn sàng.');
-                        showNotice('error', 'AI backend chưa sẵn sàng', errMsg || 'Hệ thống nhận diện khuôn mặt chưa sẵn sàng.', { closeCheckInModal: true });
-                    } else if (httpStatus === 400) {
-                        stopAutoScan();
-                        setScanStatus('error');
-                        setScanMessage(errMsg || 'Không nhận diện được khuôn mặt.');
-                        showNotice('error', 'Không nhận diện được khuôn mặt', errMsg || 'Không có dữ liệu khuôn mặt hợp lệ trước camera để điểm danh.', { closeCheckInModal: true });
-                    } else {
-                        stopAutoScan();
-                        setScanStatus('error');
-                        setScanMessage(errMsg || 'Có lỗi hệ thống trong lúc điểm danh.');
-                        showNotice('error', 'Lỗi hệ thống', errMsg || 'Có lỗi xảy ra trong lúc điểm danh. Vui lòng thử lại sau.', { closeCheckInModal: true });
-                    }
-                }
-            }, 2500);
-        }, 2000);
+            if (httpStatus === 400 && errMsg.includes('không khả dụng')) {
+                showNotice('error', 'Phiên điểm danh đã đóng', 'Phiên điểm danh hiện không còn khả dụng.', { closeCheckInModal: true });
+            } else if (httpStatus === 403) {
+                showNotice('error', 'Không thể điểm danh', buildFriendlyRuntimeMessage(err.response?.data, errMsg || 'Không có quyền điểm danh.'), { closeCheckInModal: true });
+            } else if (httpStatus === 404) {
+                showNotice('error', 'Chưa đăng ký khuôn mặt', 'Bạn chưa có dữ liệu khuôn mặt để điểm danh. Hãy đăng ký khuôn mặt trước.', { closeCheckInModal: true });
+            } else if (httpStatus === 503) {
+                showNotice('error', 'AI backend chưa sẵn sàng', buildFriendlyRuntimeMessage(err.response?.data, errMsg || 'Hệ thống nhận diện khuôn mặt chưa sẵn sàng.'), { closeCheckInModal: true });
+            } else if (httpStatus === 400) {
+                showNotice('error', 'Điểm danh thất bại', buildFriendlyRuntimeMessage(err.response?.data, errMsg || 'Chuỗi ảnh điểm danh chưa hợp lệ.'), { closeCheckInModal: true });
+            } else {
+                showNotice('error', 'Lỗi hệ thống', buildFriendlyRuntimeMessage(err.response?.data, errMsg || 'Có lỗi xảy ra trong lúc điểm danh. Vui lòng thử lại sau.'), { closeCheckInModal: true });
+            }
+        }
     };
 
     const stopAutoScan = () => {
@@ -492,7 +601,7 @@ export default function ClassDetailPage({ cls, onBack, username }) {
             scanStartupTimeoutRef.current = null;
         }
         if (scanIntervalRef.current) {
-            clearInterval(scanIntervalRef.current);
+            clearTimeout(scanIntervalRef.current);
             scanIntervalRef.current = null;
         }
     };
@@ -502,6 +611,9 @@ export default function ClassDetailPage({ cls, onBack, username }) {
         stopAutoScan();
         setShowCheckInModal(false);
         setCheckInSession(null);
+        setCheckInChallenge(null);
+        setChallengeStepIndex(0);
+        setCapturedFrames([]);
         setScanStatus('idle');
         setScanMessage('');
     };
@@ -854,34 +966,31 @@ export default function ClassDetailPage({ cls, onBack, username }) {
                         <p style={{ fontSize: 18, fontWeight: 'bold', color: '#2563eb', marginBottom: 10 }}>
                             Bước {regStep}/3: {instructions[regStep]}
                         </p>
-                        <div style={{ 
-                            width: '100%', 
-                            maxWidth: 640,
-                            aspectRatio: '4/3',
-                            margin: '0 auto 20px', 
-                            background: '#e2e8f0', 
-                            borderRadius: 12, 
-                            overflow: 'hidden', 
-                            position: 'relative' 
-                        }}>
-                            <Webcam
-                                audio={false}
-                                ref={webcamRef}
-                                screenshotFormat="image/jpeg"
-                                videoConstraints={{ facingMode: "user" }}
-                                style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scaleX(-1)' }}
-                            />
-                            {/* Overlay mask */}
-                            <div style={{ 
-                                position: 'absolute', 
-                                top: '10%', 
-                                left: '20%', 
-                                right: '20%', 
-                                bottom: '15%', 
-                                border: '3px dashed #3b82f6', 
-                                borderRadius: '50%',
-                                opacity: 0.6
-                            }}></div>
+                        <div style={cameraShellStyle}>
+                            <div style={circleViewportStyle}>
+                                <Webcam
+                                    audio={false}
+                                    ref={webcamRef}
+                                    screenshotFormat="image/jpeg"
+                                    videoConstraints={{ facingMode: "user" }}
+                                    style={webcamCircleStyle}
+                                />
+                            </div>
+                            <div style={{
+                                position: 'absolute',
+                                bottom: 18,
+                                left: '50%',
+                                transform: 'translateX(-50%)',
+                                background: 'rgba(15, 23, 42, 0.68)',
+                                color: '#fff',
+                                padding: '8px 14px',
+                                borderRadius: 999,
+                                fontSize: 13,
+                                fontWeight: 600,
+                                backdropFilter: 'blur(4px)'
+                            }}>
+                                Căn khuôn mặt vào giữa khung tròn
+                            </div>
                         </div>
                         <button 
                             className="btn btn-filled" 
@@ -936,41 +1045,31 @@ export default function ClassDetailPage({ cls, onBack, username }) {
                                 </div>
 
                                 {/* Camera Box */}
-                                <div style={{
-                                    width: '100%',
-                                    maxWidth: 560,
-                                    aspectRatio: '4/3',
-                                    margin: '0 auto 16px',
-                                    background: '#1e293b',
-                                    borderRadius: 16,
-                                    overflow: 'hidden',
-                                    position: 'relative',
-                                    border: '3px solid #3b82f6',
-                                    boxShadow: '0 0 0 4px rgba(59,130,246,0.2)'
-                                }}>
-                                    <Webcam
-                                        audio={false}
-                                        ref={checkInWebcamRef}
-                                        screenshotFormat="image/jpeg"
-                                        videoConstraints={{ facingMode: "user" }}
-                                        style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scaleX(-1)' }}
-                                    />
-                                    {/* Guồng quét */}
-                                    <div style={{
-                                        position: 'absolute',
-                                        top: '8%',
-                                        left: '22%',
-                                        right: '22%',
-                                        bottom: '12%',
-                                        borderRadius: '50%',
-                                        border: '3px dashed rgba(59,130,246,0.7)',
-                                        pointerEvents: 'none'
-                                    }}></div>
+                                <div style={{ ...cameraShellStyle, maxWidth: 560, margin: '0 auto 16px', boxShadow: '0 0 0 4px rgba(59,130,246,0.14)' }}>
+                                    <div style={{ ...circleViewportStyle, maxWidth: 320, boxShadow: '0 0 0 9999px rgba(2, 6, 23, 0.84), 0 0 0 6px rgba(59,130,246,0.28)' }}>
+                                        <Webcam
+                                            audio={false}
+                                            ref={checkInWebcamRef}
+                                            screenshotFormat="image/jpeg"
+                                            videoConstraints={{ facingMode: "user" }}
+                                            style={webcamCircleStyle}
+                                        />
+                                    </div>
                                 </div>
 
                                 <p style={{ color: '#64748b', fontSize: 13 }}>
-                                    Hướng mặt thẳng vào camera. Hệ thống tự động nhận diện...
+                                    {checkInChallenge
+                                        ? `Đã chụp ${capturedFrames.length}/${checkInChallenge.steps?.length || 5} frame. ${scanMessage}`
+                                        : 'Hệ thống đang chuẩn bị thử thách điểm danh...'}
                                 </p>
+                                {checkInChallenge && (
+                                    <div style={{ color: '#2563eb', fontSize: 13, fontWeight: 600, marginTop: 6 }}>
+                                        Bước hiện tại: {challengeStepIndex + 1}/{checkInChallenge.steps.length} - {challengeInstructions[checkInChallenge.steps[challengeStepIndex]] || 'Làm theo hướng dẫn'}
+                                    </div>
+                                )}
+                                <div style={{ color: '#64748b', fontSize: 12, marginTop: 8 }}>
+                                    Chỉ cần đưa mặt vào giữa khung tròn, ngoại cảnh sẽ được bỏ qua.
+                                </div>
                                 <button
                                     className="btn-sm"
                                     style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '8px 20px', margin: '12px auto 0' }}
